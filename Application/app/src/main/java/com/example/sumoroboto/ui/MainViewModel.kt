@@ -7,10 +7,13 @@ import com.example.sumoroboto.data.bluetooth.BluetoothConnectionState
 import com.example.sumoroboto.data.bluetooth.BluetoothDeviceModel
 import com.example.sumoroboto.data.bluetooth.BluetoothManager
 import com.example.sumoroboto.data.logging.LoggingSessionState
+import com.example.sumoroboto.data.logging.SessionRecorder
+import com.example.sumoroboto.data.logging.SessionRecorderState
 import com.example.sumoroboto.data.logging.TelemetryCsvLogger
 import com.example.sumoroboto.data.model.BatteryState
 import com.example.sumoroboto.data.model.RobotMode
 import com.example.sumoroboto.data.model.TelemetryData
+import com.example.sumoroboto.data.network.NetworkClient
 import com.example.sumoroboto.data.settings.AppAccentColor
 import com.example.sumoroboto.data.settings.AppSettingsManager
 import com.example.sumoroboto.data.settings.AppThemeMode
@@ -27,6 +30,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val settingsManager = AppSettingsManager(application.applicationContext)
     val bluetoothManager = BluetoothManager(application.applicationContext, viewModelScope)
     val csvLogger = TelemetryCsvLogger(application.applicationContext)
+    val sessionRecorder = SessionRecorder(viewModelScope)
 
     // App Navigation Flow: SPLASH -> CONNECTION -> MAIN
     private val _appFlowState = MutableStateFlow(AppFlowState.SPLASH)
@@ -81,6 +85,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentDestination: StateFlow<ScreenDestination> = _currentDestination.asStateFlow()
 
     val loggingSession: StateFlow<LoggingSessionState> = csvLogger.sessionState
+    val sessionRecorderState: StateFlow<SessionRecorderState> = sessionRecorder.state
+    val backendBaseUrl: StateFlow<String> = NetworkClient.baseUrlFlow
 
     init {
         // Collect telemetry stream
@@ -89,6 +95,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _telemetry.value = data
                 _batteryState.value = data.battery
                 csvLogger.logSample(data)
+                sessionRecorder.recordPoint(
+                    vbat = data.vBat,
+                    distL = data.distL,
+                    distR = data.distR,
+                    lineL = if (data.lineL) 1 else 0,
+                    lineR = if (data.lineR) 1 else 0,
+                    pwmL = _currentPwmL.value,
+                    pwmR = _currentPwmR.value
+                )
             }
         }
 
@@ -242,8 +257,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         csvLogger.shareLatestCsv()
     }
 
+    // Cloud Session Recording (FastAPI Backend)
+    fun startCloudSession(sessionType: String = "MATCH") {
+        sessionRecorder.startSession(sessionType = sessionType, startVbat = _telemetry.value.vBat)
+    }
+
+    fun stopAndUploadCloudSession(notes: String = "", onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        sessionRecorder.stopAndUploadSession(endVbat = _telemetry.value.vBat, notes = notes, onResult = onResult)
+    }
+
+    fun cancelCloudSession() {
+        sessionRecorder.cancelSession()
+    }
+
+    fun setBackendBaseUrl(newUrl: String) {
+        NetworkClient.updateBaseUrl(newUrl)
+    }
+
     override fun onCleared() {
         super.onCleared()
+        sessionRecorder.cancelSession()
         csvLogger.stopLogging()
         bluetoothManager.cleanup()
     }

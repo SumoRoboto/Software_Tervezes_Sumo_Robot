@@ -24,7 +24,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
@@ -42,9 +44,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,13 +70,16 @@ fun SettingsScreen(
     currentAccentColor: AppAccentColor,
     robotName: String,
     connectionState: BluetoothConnectionState,
+    backendBaseUrl: String = "http://192.168.1.150:8000/",
     onThemeModeChange: (AppThemeMode) -> Unit,
     onAccentColorChange: (AppAccentColor) -> Unit,
     onEditRobotName: () -> Unit,
     onDisconnectAndReturn: () -> Unit,
+    onBackendBaseUrlChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+    var editingUrl by remember(backendBaseUrl) { mutableStateOf(backendBaseUrl) }
 
     Column(
         modifier = modifier
@@ -353,7 +363,92 @@ fun SettingsScreen(
             }
         }
 
-        // Section 4: Specifications & Protocol Info
+        // Section 4: FastAPI Backend Server Configuration
+        Text(
+            text = "FastAPI Backend Server",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Cloud,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Telemetry API Base URL",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+
+                Text(
+                    text = "Konfiguráld a helyi FastAPI szerver elérhetőségét (POST /api/sessions):",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = editingUrl,
+                    onValueChange = { editingUrl = it },
+                    label = { Text("Base URL") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                // Preset chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = editingUrl.contains("192.168.1.150"),
+                        onClick = { editingUrl = "http://192.168.1.150:8000/" },
+                        label = { Text("Wi-Fi IP", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = editingUrl.contains("10.0.2.2"),
+                        onClick = { editingUrl = "http://10.0.2.2:8000/" },
+                        label = { Text("Emulator (10.0.2.2)", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = editingUrl.contains("127.0.0.1"),
+                        onClick = { editingUrl = "http://127.0.0.1:8000/" },
+                        label = { Text("Localhost", fontSize = 11.sp) }
+                    )
+                }
+
+                Button(
+                    onClick = { onBackendBaseUrlChange(editingUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = editingUrl.isNotBlank()
+                ) {
+                    Text("Alkalmazás (Mentés)")
+                }
+            }
+        }
+
+        // Section 5: Specifications & Protocol Info
         Card(
             modifier = Modifier.fillMaxWidth(),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

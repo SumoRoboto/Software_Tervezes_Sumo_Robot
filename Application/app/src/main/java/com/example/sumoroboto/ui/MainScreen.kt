@@ -48,6 +48,8 @@ fun MainScreen(
     val showDeviceDialog by viewModel.showDeviceDialog.collectAsState()
     val bondedDevices by viewModel.bondedDevices.collectAsState()
     val loggingState by viewModel.loggingSession.collectAsState()
+    val sessionRecorderState by viewModel.sessionRecorderState.collectAsState()
+    val backendBaseUrl by viewModel.backendBaseUrl.collectAsState()
 
     val robotName by viewModel.robotName.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
@@ -139,8 +141,12 @@ fun MainScreen(
                     TelemetryScreen(
                         telemetry = telemetry,
                         loggingState = loggingState,
+                        sessionRecorderState = sessionRecorderState,
                         onToggleLogging = { viewModel.toggleLogging() },
-                        onShareCsv = { viewModel.shareCsv() }
+                        onShareCsv = { viewModel.shareCsv() },
+                        onStartCloudSession = { sessionType -> viewModel.startCloudSession(sessionType) },
+                        onStopAndUploadCloudSession = { notes -> viewModel.stopAndUploadCloudSession(notes) },
+                        onCancelCloudSession = { viewModel.cancelCloudSession() }
                     )
                 }
                 ScreenDestination.DOHYO -> {
@@ -155,10 +161,12 @@ fun MainScreen(
                         currentAccentColor = accentColor,
                         robotName = robotName,
                         connectionState = connectionState,
+                        backendBaseUrl = backendBaseUrl,
                         onThemeModeChange = { viewModel.setThemeMode(it) },
                         onAccentColorChange = { viewModel.setAccentColor(it) },
                         onEditRobotName = { viewModel.openRobotNameDialog() },
-                        onDisconnectAndReturn = { viewModel.disconnectAndReturnToConnection() }
+                        onDisconnectAndReturn = { viewModel.disconnectAndReturnToConnection() },
+                        onBackendBaseUrlChange = { viewModel.setBackendBaseUrl(it) }
                     )
                 }
             }
