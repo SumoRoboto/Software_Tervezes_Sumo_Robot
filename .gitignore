@@ -1,0 +1,12 @@
+# Python virtuális környezet
+venv/
+.venv/
+env/
+
+# Python gyorsítótárak
+__pycache__/
+*.pyc
+
+# Lokális SQLite adatbázis fájlok (ne írja felül a tesztadat a szervert)
+*.db
+*.sqlite3
