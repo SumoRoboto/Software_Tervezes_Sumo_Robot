@@ -9,4 +9,10 @@ __pycache__/
 
 # Lokális SQLite adatbázis fájlok (ne írja felül a tesztadat a szervert)
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
+
+# Teszt gyorsítótár és macOS rendszerfájlok
+.pytest_cache/
+.DS_Store
