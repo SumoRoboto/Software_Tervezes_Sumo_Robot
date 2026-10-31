@@ -57,8 +57,8 @@
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
                         <h1 id="top-robot-name" class="text-base md:text-lg font-bold text-white truncate">Mini Sumo</h1>
-                        <span class="hidden sm:inline-block text-[11px] font-mono px-2 py-0.5 rounded bg-[#262B34] text-[#A0AAB5] border border-[#2C3440]">
-                            127.0.0.1:5000
+                        <span id="top-api-badge" class="hidden sm:inline-block text-[11px] font-mono px-2 py-0.5 rounded bg-[#262B34] text-[#00E5FF] border border-[#2C3440]">
+                            FastAPI :8000
                         </span>
                     </div>
                     <!-- ConnectionStatusChip -->
@@ -131,6 +131,15 @@
             </button>
             <button
                 type="button"
+                onclick="switchTab('history'); loadHistoryAndEvents();"
+                id="tab-btn-history"
+                class="tab-btn flex items-center gap-2 px-4 py-2.5 text-xs md:text-sm font-semibold border-b-2 border-transparent text-[#A0AAB5] hover:text-white transition whitespace-nowrap"
+            >
+                <span>📜</span>
+                <span>Előzmények &amp; Rule Engine</span>
+            </button>
+            <button
+                type="button"
                 onclick="switchTab('settings')"
                 id="tab-btn-settings"
                 class="tab-btn flex items-center gap-2 px-4 py-2.5 text-xs md:text-sm font-semibold border-b-2 border-transparent text-[#A0AAB5] hover:text-white transition whitespace-nowrap"
@@ -142,7 +151,56 @@
     </header>
 
     <!-- FŐ TARTALOM -->
-    <main class="max-w-7xl w-full mx-auto flex-grow p-4 md:p-6">
+    <main class="max-w-7xl w-full mx-auto flex-grow p-4 md:p-6 space-y-5">
+
+        <!-- HOT PATH VÉSZLEÁLLÍTÁSI RIASZTÁS BANNER -->
+        <div id="estop-banner" class="hidden bg-[#3B1216] border-2 border-[#E53935] rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div class="space-y-1">
+                <div class="flex items-center gap-2 text-[#FF5252] font-extrabold text-sm uppercase tracking-wider">
+                    <span>🔥 HOT PATH VÉSZLEÁLLÍTÁS AKTÍV (PARANCS KIKÜLDVE: STOP\n)</span>
+                </div>
+                <p id="estop-reason-text" class="text-xs text-white font-mono">Kritikus telemetriai határérték-túllépés miatt a motorok azonnal leálltak.</p>
+            </div>
+            <button
+                type="button"
+                onclick="resetEmergencyLatch()"
+                class="shrink-0 px-4 py-2 rounded-xl bg-[#43A047] hover:bg-[#388E3C] text-white text-xs font-bold shadow transition"
+            >
+                🔓 Vészállapot Feloldása (Reset)
+            </button>
+        </div>
+
+        <!-- GYORS ADATGENERÁTOR & RULE ENGINE TESZT SÁV -->
+        <div class="bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+                <span id="sim-dot" class="w-2.5 h-2.5 rounded-full bg-[#455A64]"></span>
+                <span class="text-xs font-bold text-white">Python Uplink Szimulátor:</span>
+                <span id="sim-status-label" class="text-xs font-mono text-[#A0AAB5]">LEÁLLÍTVA</span>
+                <button
+                    type="button"
+                    id="btn-sim-toggle"
+                    onclick="toggleBackendSimulator()"
+                    class="px-3 py-1.5 rounded-lg accent-bg text-xs font-bold transition"
+                >
+                    ▶ Szimulátor Indítása
+                </button>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-[11px] font-mono text-[#A0AAB5]">Hot Path Teszt:</span>
+                <button type="button" onclick="injectTestAnomaly('MOTOR_PWM_SPIKE')" class="px-2.5 py-1 rounded-lg bg-[#262B34] hover:bg-[#E53935] hover:text-white border border-[#2C3440] text-[11px] font-mono text-[#E0E0E0] transition">
+                    ⚡ Motor PWM Tüske (&gt;255)
+                </button>
+                <button type="button" onclick="injectTestAnomaly('COLLISION_IMMINENT')" class="px-2.5 py-1 rounded-lg bg-[#262B34] hover:bg-[#E53935] hover:text-white border border-[#2C3440] text-[11px] font-mono text-[#E0E0E0] transition">
+                    💥 Ütközésveszély (&le;5cm)
+                </button>
+                <button type="button" onclick="injectTestAnomaly('DOHYO_FALL_DANGER')" class="px-2.5 py-1 rounded-lg bg-[#262B34] hover:bg-[#E53935] hover:text-white border border-[#2C3440] text-[11px] font-mono text-[#E0E0E0] transition">
+                    🏳️ Dohyo Szegély Túlfutás
+                </button>
+                <button type="button" onclick="injectTestAnomaly('BATTERY_DEEP_DISCHARGE')" class="px-2.5 py-1 rounded-lg bg-[#262B34] hover:bg-[#E53935] hover:text-white border border-[#2C3440] text-[11px] font-mono text-[#E0E0E0] transition">
+                    🪫 Kritikus Akku (&lt;6.4V)
+                </button>
+            </div>
+        </div>
 
         <!-- =================================================================== -->
         <!-- 1. FÜL: VEZÉRLÉS & TELEMETRIA (Két vizuálisan elkülönülő panel)     -->
@@ -209,8 +267,8 @@
                             </div>
                         </div>
                         <div class="text-[11px] font-mono text-[#A0AAB5] border-t border-[#2C3440] pt-2 flex justify-between">
-                            <span>SQLite naplózás:</span>
-                            <span class="text-[#43A047]">telemetry.db (logs)</span>
+                            <span>SQLite Cold Path:</span>
+                            <span id="val-rule-chip" class="text-[#43A047]">sumo_telemetry.db · OK</span>
                         </div>
                     </div>
                 </div>
@@ -466,14 +524,14 @@
                     </div>
                 </div>
 
-                <!-- Emergency Stop Button (ControlScreen.kt alapján) -->
+                <!-- Emergency Stop Button (ControlScreen.kt alapján -> POST /api/emergency-stop) -->
                 <button
                     type="button"
-                    onclick="sendCommand('S')"
+                    onclick="triggerEmergencyStop()"
                     class="w-full py-2.5 rounded-xl bg-[#C62828] hover:bg-[#B71C1C] active:scale-[0.99] text-white font-bold text-xs tracking-wider uppercase shadow-md transition flex items-center justify-center gap-2"
                 >
                     <span>🛑</span>
-                    <span>EMERGENCY STOP (PARANCS: S)</span>
+                    <span>EMERGENCY STOP (HOT PATH: STOP\n)</span>
                 </button>
 
                 <!-- Utolsó parancs státusz -->
@@ -584,7 +642,8 @@
                                 ⬇ Munkamenet CSV Letöltése
                             </button>
                             <a
-                                href="http://127.0.0.1:5000/api/export/csv"
+                                id="sqlite-csv-download-link"
+                                href="/api/export/csv"
                                 target="_blank"
                                 class="py-2 px-3 rounded-lg bg-[#262B34] hover:bg-[#2C3440] border border-[#455A64] text-white text-xs font-bold text-center transition"
                             >
@@ -733,15 +792,124 @@
                     <div id="accent-swatches" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
                 </section>
 
+                <!-- FastAPI Backend URL konfiguráció -->
+                <section class="bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-6 space-y-4">
+                    <div>
+                        <h2 class="text-base font-bold accent-text">FastAPI Backend Server URL</h2>
+                        <p class="text-xs text-[#A0AAB5]">Közös REST API végpont a Webes Dashboard és az Android App számára:</p>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-2.5">
+                        <input
+                            id="input-api-base-url"
+                            type="text"
+                            value="http://127.0.0.1:8000"
+                            class="flex-1 px-3 py-2 rounded-xl bg-[#121418] border border-[#2C3440] text-sm font-mono text-white"
+                        >
+                        <button
+                            type="button"
+                            onclick="saveApiBaseUrl()"
+                            class="px-4 py-2 rounded-xl accent-bg text-xs font-bold"
+                        >
+                            URL Mentése
+                        </button>
+                    </div>
+                </section>
+
                 <!-- Mini Sumo System Specs (SettingsScreen.kt alapján) -->
                 <section class="bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-6 space-y-2">
-                    <h2 class="text-sm font-bold text-white">ℹ️ Mini Sumo System Specs</h2>
+                    <h2 class="text-sm font-bold text-white">ℹ️ Mini Sumo Unified FastAPI Specs</h2>
                     <ul class="text-xs text-[#A0AAB5] space-y-1 font-mono">
-                        <li>• Telemetry Endpoint: GET http://127.0.0.1:5000/api/telemetry (500 ms ticker)</li>
-                        <li>• Command Endpoint: POST http://127.0.0.1:5000/api/command (F, B, L, R, S)</li>
-                        <li>• CSV Export Endpoint: GET http://127.0.0.1:5000/api/export/csv</li>
-                        <li>• 2S LiPo Battery: 8.4V max, 7.4V nominal, 6.8V critical cutoff</li>
+                        <li>• Live Telemetry &amp; Uplink: GET / POST /api/telemetry (Hot Path Rule Engine + Cold Path SQLite)</li>
+                        <li>• Command &amp; E-Stop: POST /api/command, POST /api/emergency-stop, POST /api/emergency-reset</li>
+                        <li>• Historical &amp; Safety Audit: GET /api/history, GET /api/events, GET /api/analytics/summary</li>
+                        <li>• Mobile Session Sync (Kovacs1Dani): POST / GET /api/sessions, GET /api/export/csv</li>
                     </ul>
+                </section>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- 5. FÜL: TÖRTÉNELMI LEKÉRDEZŐ (GET /api/history) & RULE ENGINE AUDIT  -->
+        <!-- =================================================================== -->
+        <div id="tab-history" class="hidden space-y-6">
+            <!-- KPI Összefoglaló Kártyák -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div class="bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-4">
+                    <div class="text-xs text-[#A0AAB5]">SQLite Mentett Logok</div>
+                    <div id="kpi-total-logs" class="text-2xl font-mono font-bold text-white mt-1">0</div>
+                </div>
+                <div class="bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-4">
+                    <div class="text-xs text-[#A0AAB5]">Csúcs Motor PWM</div>
+                    <div id="kpi-peak-pwm" class="text-2xl font-mono font-bold accent-text mt-1">0</div>
+                </div>
+                <div class="bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-4">
+                    <div class="text-xs text-[#A0AAB5]">Hot Path Vészleállítások</div>
+                    <div id="kpi-estops" class="text-2xl font-mono font-bold text-[#E53935] mt-1">0</div>
+                </div>
+                <div class="bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-4">
+                    <div class="text-xs text-[#A0AAB5]">Mobil App Futamok</div>
+                    <div id="kpi-sessions" class="text-2xl font-mono font-bold text-[#43A047] mt-1">0</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <!-- Bal (7 oszlop): GET /api/history szűrhető táblázat -->
+                <section class="lg:col-span-7 bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-5 space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#2C3440] pb-3">
+                        <div>
+                            <h2 class="text-lg font-bold text-white">Történelmi Telemetria Lekérdező</h2>
+                            <p class="text-xs font-mono accent-text" id="history-query-label">GET /api/history?limit=40</p>
+                        </div>
+                        <button type="button" onclick="loadHistoryAndEvents()" class="px-3 py-1.5 rounded-lg accent-bg text-xs font-bold">
+                            🔄 Frissítés
+                        </button>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="applyHistoryPreset('all')" class="px-3 py-1.5 rounded-lg bg-[#262B34] hover:bg-[#2C3440] border border-[#455A64] text-xs font-semibold text-white">
+                            Összes legutóbbi
+                        </button>
+                        <button type="button" onclick="applyHistoryPreset('high_pwm')" class="px-3 py-1.5 rounded-lg bg-[#262B34] hover:bg-[#FF9800] hover:text-black border border-[#455A64] text-xs font-semibold text-white">
+                            ⚡ Kiugró Motor (PWM &ge; 240)
+                        </button>
+                        <button type="button" onclick="applyHistoryPreset('critical')" class="px-3 py-1.5 rounded-lg bg-[#262B34] hover:bg-[#E53935] border border-[#455A64] text-xs font-semibold text-white">
+                            🔥 Csak Vészleállítások (CRITICAL)
+                        </button>
+                        <button type="button" onclick="applyHistoryPreset('low_bat')" class="px-3 py-1.5 rounded-lg bg-[#262B34] hover:bg-[#FFD600] hover:text-black border border-[#455A64] text-xs font-semibold text-white">
+                            🪫 Alacsony Akku (&le; 6.8V)
+                        </button>
+                        <button type="button" onclick="applyHistoryPreset('sessions')" class="px-3 py-1.5 rounded-lg bg-[#262B34] hover:bg-[#2979FF] border border-[#455A64] text-xs font-semibold text-white">
+                            📱 Mobil Futamok
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto border border-[#2C3440] rounded-xl max-h-96">
+                        <table class="w-full text-left font-mono text-xs">
+                            <thead class="bg-[#121418] text-[#A0AAB5] sticky top-0">
+                                <tr>
+                                    <th class="p-2.5">Időbélyeg</th>
+                                    <th class="p-2.5">Státusz</th>
+                                    <th class="p-2.5">PWM (L/R)</th>
+                                    <th class="p-2.5">Dist (L/R)</th>
+                                    <th class="p-2.5">VBat</th>
+                                    <th class="p-2.5">Szabály</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body" class="divide-y divide-[#2C3440] bg-[#16191E]">
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Jobb (5 oszlop): GET /api/events Rule Engine Audit Napló -->
+                <section class="lg:col-span-5 bg-[#1B1E24] border border-[#2C3440] rounded-2xl p-5 space-y-4">
+                    <div class="border-b border-[#2C3440] pb-3">
+                        <h2 class="text-lg font-bold text-white">Rule Engine Biztonsági Napló</h2>
+                        <p class="text-xs font-mono text-[#A0AAB5]">GET /api/events (Hot Path STOP\n &amp; Figyelmeztetések)</p>
+                    </div>
+                    <div id="events-feed" class="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                        <div class="text-xs text-[#A0AAB5] font-mono">Még nem történt biztonsági esemény.</div>
+                    </div>
                 </section>
             </div>
         </div>
@@ -750,9 +918,12 @@
 
     <!-- ASZINKRON JAVASCRIPT LOGIKA -->
     <script>
-        // Szigorúan a kért 127.0.0.1:5000 végpontok és 500 ms-os ciklusidő
-        const TELEMETRY_URL = 'http://127.0.0.1:5000/api/telemetry';
-        const COMMAND_URL = 'http://127.0.0.1:5000/api/command';
+        // Automatikus FastAPI URL detektálás: ha FastAPI szolgálja ki (http://...), azonos origin;
+        // ha file://-ról nyitják meg közvetlenül, akkor http://127.0.0.1:8000 alapértelmezés!
+        let API_BASE_URL = window.location.protocol.startsWith('http')
+            ? window.location.origin
+            : 'http://127.0.0.1:8000';
+        let currentHistoryQuery = 'limit=40';
         const POLL_INTERVAL_MS = 500;
 
         // AppSettings.kt hangsúlyos színek
@@ -946,12 +1117,30 @@
                 batChip.className = 'text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#43A047]/20 text-[#43A047]';
             }
 
-            // Állapot és Mód
+            // Állapot, Mód, Hot Path vészleállítás és Szimulátor visszajelzés
             const state = data.state || 'STOP';
             const mode = data.mode || 'MANUAL';
             document.getElementById('val-state').textContent = state;
             document.getElementById('val-mode').textContent = mode;
             document.getElementById('val-updated').textContent = new Date().toLocaleTimeString('hu-HU');
+
+            const isEstop = Boolean(data.emergency_stop);
+            const estopBanner = document.getElementById('estop-banner');
+            estopBanner.classList.toggle('hidden', !isEstop);
+            if (isEstop && data.emergency_reason) {
+                document.getElementById('estop-reason-text').textContent = data.emergency_reason;
+            }
+
+            const ruleChip = document.getElementById('val-rule-chip');
+            const valStatus = data.validation_status || 'OK';
+            ruleChip.textContent = `sumo_telemetry.db · ${valStatus}`;
+            ruleChip.className = valStatus === 'CRITICAL'
+                ? 'text-[#E53935] font-bold'
+                : (valStatus === 'WARNING' ? 'text-[#FFA000] font-bold' : 'text-[#43A047]');
+
+            if (typeof data.simulator_running === 'boolean') {
+                updateSimulatorUi(data.simulator_running);
+            }
 
             // Szenzorok: s1, s2, s3 (SensorBar.kt színkódolással)
             const s1 = Number(data.s1 ?? 0);
@@ -1019,34 +1208,40 @@
         }
 
         /**
-         * Aszinkron GET lekérdezés 500 ms-onként a http://127.0.0.1:5000/api/telemetry végpontról
+         * Aszinkron GET lekérdezés 500 ms-onként a FastAPI /api/telemetry végpontról
          */
         async function fetchTelemetry() {
             try {
-                const response = await fetch(TELEMETRY_URL);
+                const response = await fetch(`${API_BASE_URL}/api/telemetry`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 updateTelemetryDom(data);
             } catch (err) {
                 document.getElementById('conn-dot').className = 'w-2 h-2 rounded-full bg-[#E53935] animate-pulse';
-                document.getElementById('conn-text').textContent = 'Disconnected – Indítsd el a mock_server.py-t (127.0.0.1:5000)';
+                document.getElementById('conn-text').textContent = `Disconnected – Indítsd el a Backend/main.py szervert (${API_BASE_URL})`;
             }
         }
 
         /**
-         * Aszinkron POST kérés gombnyomásra a http://127.0.0.1:5000/api/command végpontra
+         * Aszinkron POST kérés gombnyomásra a FastAPI /api/command végpontra (Speed Limiter figyelembevételével)
          */
         async function sendCommand(commandChar) {
             const statusEl = document.getElementById('last-cmd-status');
+            const speedPct = Number(document.getElementById('speed-limit-slider')?.value || 100);
             try {
                 statusEl.textContent = `Küldés: ${commandChar}...`;
-                const response = await fetch(COMMAND_URL, {
+                const response = await fetch(`${API_BASE_URL}/api/command`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ command: commandChar })
+                    body: JSON.stringify({ command: commandChar, speed_pct: speedPct })
                 });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const result = await response.json();
+                if (response.status === 409) {
+                    statusEl.textContent = `🔒 BLOKKOLVA: Előbb oldd fel a vészleállítást!`;
+                    if (result.robot_state) updateTelemetryDom(result.robot_state);
+                    return;
+                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 if (result.robot_state) {
                     statusEl.textContent = `${commandChar} → ${result.robot_state.state} (PWM: ${result.robot_state.pwmA}/${result.robot_state.pwmB})`;
                     updateTelemetryDom(result.robot_state);
@@ -1054,6 +1249,82 @@
             } catch (err) {
                 statusEl.textContent = `Hiba a(z) ${commandChar} parancs küldésekor!`;
             }
+        }
+
+        /**
+         * Azonnali Hot Path vészleállítás (POST /api/emergency-stop) és feloldás (POST /api/emergency-reset)
+         */
+        async function triggerEmergencyStop() {
+            const statusEl = document.getElementById('last-cmd-status');
+            try {
+                const resp = await fetch(`${API_BASE_URL}/api/emergency-stop`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: 'Webes vezérlőpult E-STOP gomb megnyomva', source: 'WEB_DASHBOARD' })
+                });
+                const res = await resp.json();
+                statusEl.textContent = '🛑 VÉSZLEÁLLÍTÁS AKTIVÁLVA (STOP\\n)';
+                if (res.robot_state) updateTelemetryDom(res.robot_state);
+            } catch (_) {
+                statusEl.textContent = 'Hiba a vészleállítás küldésekor!';
+            }
+        }
+
+        async function resetEmergencyLatch() {
+            const statusEl = document.getElementById('last-cmd-status');
+            try {
+                const resp = await fetch(`${API_BASE_URL}/api/emergency-reset`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ operator_note: 'Web Dashboard operátor által feloldva' })
+                });
+                const res = await resp.json();
+                statusEl.textContent = '🔓 Vészleállítás feloldva (STOP)';
+                if (res.robot_state) updateTelemetryDom(res.robot_state);
+                loadHistoryAndEvents();
+            } catch (_) {}
+        }
+
+        /**
+         * Beépített Python Uplink Szimulátor és Hot Path Anomália Injektáló
+         */
+        let simulatorRunning = false;
+        function updateSimulatorUi(running) {
+            simulatorRunning = running;
+            const dot = document.getElementById('sim-dot');
+            const label = document.getElementById('sim-status-label');
+            const btn = document.getElementById('btn-sim-toggle');
+            if (running) {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-[#43A047] animate-pulse';
+                label.textContent = 'FUT (Uplink -> Rule Engine -> SQLite)';
+                label.className = 'text-xs font-mono text-[#43A047] font-bold';
+                btn.textContent = '■ Szimulátor Leállítása';
+            } else {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-[#455A64]';
+                label.textContent = 'LEÁLLÍTVA';
+                label.className = 'text-xs font-mono text-[#A0AAB5]';
+                btn.textContent = '▶ Szimulátor Indítása';
+            }
+        }
+
+        async function toggleBackendSimulator() {
+            const endpoint = simulatorRunning ? '/api/simulator/stop' : '/api/simulator/start';
+            try {
+                const resp = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'POST' });
+                const data = await resp.json();
+                updateSimulatorUi(Boolean(data.running));
+            } catch (_) {}
+        }
+
+        async function injectTestAnomaly(scenario) {
+            try {
+                const resp = await fetch(`${API_BASE_URL}/api/simulator/inject-anomaly?scenario=${encodeURIComponent(scenario)}`, {
+                    method: 'POST'
+                });
+                const res = await resp.json();
+                if (res.robot_state) updateTelemetryDom(res.robot_state);
+                loadHistoryAndEvents();
+            } catch (_) {}
         }
 
         /**
@@ -1070,10 +1341,10 @@
                 manualBtn.className = 'py-2 px-3 rounded-lg text-xs font-bold bg-[#262B34] text-[#A0AAB5] hover:text-white border border-[#2C3440] transition flex items-center justify-center gap-1.5';
             }
             try {
-                await fetch(COMMAND_URL, {
+                await fetch(`${API_BASE_URL}/api/command`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ command: latestTelemetry.state === 'STOP' ? 'S' : 'F', mode })
+                    body: JSON.stringify({ mode })
                 });
             } catch (_) {}
         }
@@ -1328,10 +1599,10 @@
         }
 
         /**
-         * Fülváltás (Dashboard / Megosztás / Dohyo / Beállítások)
+         * Fülváltás (Dashboard / Megosztás / Dohyo / Előzmények / Beállítások)
          */
         function switchTab(tabId) {
-            ['dashboard', 'share', 'dohyo', 'settings'].forEach(id => {
+            ['dashboard', 'share', 'dohyo', 'history', 'settings'].forEach(id => {
                 document.getElementById(`tab-${id}`).classList.toggle('hidden', id !== tabId);
                 const btn = document.getElementById(`tab-btn-${id}`);
                 if (id === tabId) {
@@ -1340,6 +1611,88 @@
                     btn.className = 'tab-btn flex items-center gap-2 px-4 py-2.5 text-xs md:text-sm font-semibold border-b-2 border-transparent text-[#A0AAB5] hover:text-white transition whitespace-nowrap';
                 }
             });
+        }
+
+        function saveApiBaseUrl() {
+            const raw = document.getElementById('input-api-base-url').value.trim().replace(/\/+$/, '');
+            if (!raw) return;
+            API_BASE_URL = raw;
+            document.getElementById('top-api-badge').textContent = raw.replace(/^https?:\/\//, '');
+            document.getElementById('sqlite-csv-download-link').href = `${API_BASE_URL}/api/export/csv`;
+            fetchTelemetry();
+        }
+
+        function applyHistoryPreset(preset) {
+            if (preset === 'high_pwm') currentHistoryQuery = 'source=all&min_pwm=240&limit=40';
+            else if (preset === 'critical') currentHistoryQuery = 'source=all&emergency_only=true&limit=40';
+            else if (preset === 'low_bat') currentHistoryQuery = 'source=all&max_vbat=6.8&limit=40';
+            else if (preset === 'sessions') currentHistoryQuery = 'source=sessions&limit=40';
+            else currentHistoryQuery = 'source=live&limit=40';
+            loadHistoryAndEvents();
+        }
+
+        async function loadHistoryAndEvents() {
+            document.getElementById('history-query-label').textContent = `GET /api/history?${currentHistoryQuery}`;
+            try {
+                const [histResp, evResp, sumResp] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/history?${currentHistoryQuery}`),
+                    fetch(`${API_BASE_URL}/api/events?limit=25`),
+                    fetch(`${API_BASE_URL}/api/analytics/summary`)
+                ]);
+                if (sumResp.ok) {
+                    const summary = await sumResp.json();
+                    document.getElementById('kpi-total-logs').textContent = summary.live_telemetry.total_logs;
+                    document.getElementById('kpi-peak-pwm').textContent = Math.max(summary.live_telemetry.peak_pwm, summary.mobile_sessions.peak_pwm);
+                    document.getElementById('kpi-estops').textContent = summary.live_telemetry.emergency_stops_triggered;
+                    document.getElementById('kpi-sessions').textContent = summary.mobile_sessions.total_sessions;
+                }
+                if (histResp.ok) {
+                    const hist = await histResp.json();
+                    const tbody = document.getElementById('history-table-body');
+                    if (!hist.items || hist.items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-[#A0AAB5]">Nincs a szűrőnek megfelelő rekord.</td></tr>';
+                    } else {
+                        tbody.innerHTML = hist.items.map(r => {
+                            const sevClass = r.validation_status === 'CRITICAL'
+                                ? 'bg-[#E53935]/20 text-[#FF5252]'
+                                : (r.validation_status === 'WARNING' ? 'bg-[#FFA000]/20 text-[#FFA000]' : 'bg-[#43A047]/20 text-[#43A047]');
+                            const tsShort = String(r.timestamp || '').replace('T', ' ').slice(0, 19);
+                            return `
+                                <tr class="hover:bg-[#262B34]/60">
+                                    <td class="p-2 text-[#A0AAB5]">${tsShort}</td>
+                                    <td class="p-2"><span class="px-1.5 py-0.5 rounded font-bold text-[10px] ${sevClass}">${r.validation_status}</span></td>
+                                    <td class="p-2 text-white font-bold">${r.pwm_l} / ${r.pwm_r}</td>
+                                    <td class="p-2">${r.dist_l} / ${r.dist_r} cm</td>
+                                    <td class="p-2">${Number(r.vbat).toFixed(2)}V</td>
+                                    <td class="p-2 text-[11px] text-[#00E5FF]">${r.triggered_rules || '-'}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+                }
+                if (evResp.ok) {
+                    const evData = await evResp.json();
+                    const feed = document.getElementById('events-feed');
+                    if (!evData.items || evData.items.length === 0) {
+                        feed.innerHTML = '<div class="text-xs text-[#A0AAB5] font-mono">Még nem történt biztonsági esemény.</div>';
+                    } else {
+                        feed.innerHTML = evData.items.map(ev => {
+                            const border = ev.severity === 'CRITICAL' ? 'border-[#E53935]' : (ev.severity === 'WARNING' ? 'border-[#FFA000]' : 'border-[#2979FF]');
+                            const badge = ev.severity === 'CRITICAL' ? 'text-[#FF5252]' : (ev.severity === 'WARNING' ? 'text-[#FFA000]' : 'text-[#2979FF]');
+                            return `
+                                <div class="bg-[#121418] border-l-4 ${border} rounded-r-xl p-3 space-y-1">
+                                    <div class="flex items-center justify-between text-[11px] font-mono">
+                                        <span class="font-bold ${badge}">${ev.severity} · ${ev.rule_code}</span>
+                                        <span class="text-[#A0AAB5]">Akció: ${ev.action_taken}</span>
+                                    </div>
+                                    <div class="text-xs text-white">${ev.message}</div>
+                                    <div class="text-[10px] font-mono text-[#A0AAB5]">${ev.timestamp}</div>
+                                </div>
+                            `;
+                        }).join('');
+                    }
+                }
+            } catch (_) {}
         }
 
         /**
@@ -1374,6 +1727,9 @@
         }
 
         // Inicializálás
+        document.getElementById('input-api-base-url').value = API_BASE_URL;
+        document.getElementById('top-api-badge').textContent = API_BASE_URL.replace(/^https?:\/\//, '');
+        document.getElementById('sqlite-csv-download-link').href = `${API_BASE_URL}/api/export/csv`;
         renderAccentSwatches();
         drawDohyoRadar(35, 42, false);
         fetchTelemetry();
