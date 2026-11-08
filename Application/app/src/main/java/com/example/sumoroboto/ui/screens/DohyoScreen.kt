@@ -45,12 +45,22 @@ import com.example.sumoroboto.data.model.TelemetryData
 import kotlin.math.cos
 import kotlin.math.sin
 
+import androidx.compose.material.icons.filled.SportsMartialArts
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DohyoScreen(
     telemetry: TelemetryData,
     robotName: String = "Mini Sumo",
     modifier: Modifier = Modifier
 ) {
+    var gameMode by remember { mutableStateOf(false) }   // ÚJ
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -77,7 +87,7 @@ fun DohyoScreen(
                 )
             }
 
-            if (telemetry.lineL || telemetry.lineR) {
+            if (!gameMode && (telemetry.lineL || telemetry.lineR)) {   // MÓDOSÍTVA: !gameMode &&
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -102,57 +112,88 @@ fun DohyoScreen(
             }
         }
 
-        // Circular Dohyo Canvas
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
+        // ÚJ: Radar / Minijáték váltó
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            DohyoCanvas(
-                telemetry = telemetry,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .aspectRatio(1f)
+            FilterChip(
+                selected = !gameMode,
+                onClick = { gameMode = false },
+                label = { Text("Radar") },
+                modifier = Modifier.weight(1f)
+            )
+            FilterChip(
+                selected = gameMode,
+                onClick = { gameMode = true },
+                label = { Text("Minijáték") },
+                leadingIcon = {
+                    Icon(Icons.Default.SportsMartialArts, contentDescription = null, modifier = Modifier.size(18.dp))
+                },
+                modifier = Modifier.weight(1f)
             )
         }
 
-        // Live Sensors Legend Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Row(
+        if (gameMode) {
+            // ÚJ: offline minijáték (nem használja a Bluetooth-ot / ViewModel-t)
+            SumoMiniGame(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
-                horizontalArrangement = Arrangement.SpaceAround
+                    .weight(1f)
+            )
+        } else {
+            // Circular Dohyo Canvas
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                SensorLegendItem(
-                    label = "Left Distance",
-                    value = if (telemetry.distL > 0) "${telemetry.distL} cm" else "--",
-                    isWarning = telemetry.distL in 1..18
+                DohyoCanvas(
+                    telemetry = telemetry,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .aspectRatio(1f)
                 )
-                SensorLegendItem(
-                    label = "Right Distance",
-                    value = if (telemetry.distR > 0) "${telemetry.distR} cm" else "--",
-                    isWarning = telemetry.distR in 1..18
-                )
-                SensorLegendItem(
-                    label = "Left Line",
-                    value = if (telemetry.lineL) "WHITE EDGE" else "CLEAR",
-                    isWarning = telemetry.lineL
-                )
-                SensorLegendItem(
-                    label = "Right Line",
-                    value = if (telemetry.lineR) "WHITE EDGE" else "CLEAR",
-                    isWarning = telemetry.lineR
-                )
+            }
+
+            // Live Sensors Legend Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceAround
+                ) {
+                    SensorLegendItem(
+                        label = "Left Distance",
+                        value = if (telemetry.distL > 0) "${telemetry.distL} cm" else "--",
+                        isWarning = telemetry.distL in 1..18
+                    )
+                    SensorLegendItem(
+                        label = "Right Distance",
+                        value = if (telemetry.distR > 0) "${telemetry.distR} cm" else "--",
+                        isWarning = telemetry.distR in 1..18
+                    )
+                    SensorLegendItem(
+                        label = "Left Line",
+                        value = if (telemetry.lineL) "WHITE EDGE" else "CLEAR",
+                        isWarning = telemetry.lineL
+                    )
+                    SensorLegendItem(
+                        label = "Right Line",
+                        value = if (telemetry.lineR) "WHITE EDGE" else "CLEAR",
+                        isWarning = telemetry.lineR
+                    )
+                }
             }
         }
     }
