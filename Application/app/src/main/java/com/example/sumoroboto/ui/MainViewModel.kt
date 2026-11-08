@@ -81,7 +81,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentPwmR = MutableStateFlow(0)
     val currentPwmR: StateFlow<Int> = _currentPwmR.asStateFlow()
 
-    private val _currentDestination = MutableStateFlow(ScreenDestination.CONTROL)
+    private val _currentDestination = MutableStateFlow(ScreenDestination.TELEMETRY)
     val currentDestination: StateFlow<ScreenDestination> = _currentDestination.asStateFlow()
 
     val loggingSession: StateFlow<LoggingSessionState> = csvLogger.sessionState

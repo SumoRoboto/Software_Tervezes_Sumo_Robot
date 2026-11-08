@@ -51,8 +51,7 @@ class MainActivity : ComponentActivity() {
                                 isScanning = isScanning,
                                 onConnectDevice = { viewModel.connectDevice(it) },
                                 onStartScan = { viewModel.startBluetoothScan() },
-                                onRefresh = { viewModel.refreshDevices() },
-                                onEnterSidedoor = { viewModel.enterSidedoor() }
+                                onRefresh = { viewModel.refreshDevices() }
                             )
                         }
                         AppFlowState.MAIN -> {

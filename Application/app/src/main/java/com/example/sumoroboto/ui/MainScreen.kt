@@ -124,19 +124,6 @@ fun MainScreen(
                 .padding(innerPadding)
         ) {
             when (currentDestination) {
-                ScreenDestination.CONTROL -> {
-                    ControlScreen(
-                        robotMode = currentMode,
-                        speedLimit = speedLimit,
-                        pwmL = pwmL,
-                        pwmR = pwmR,
-                        onModeChange = { viewModel.setRobotMode(it) },
-                        onSpeedLimitChange = { viewModel.setSpeedLimit(it) },
-                        onJoystickMove = { x, y -> viewModel.onJoystickMove(x, y) },
-                        onJoystickRelease = { viewModel.onJoystickRelease() },
-                        onEmergencyStop = { viewModel.emergencyStop() }
-                    )
-                }
                 ScreenDestination.TELEMETRY -> {
                     TelemetryScreen(
                         telemetry = telemetry,

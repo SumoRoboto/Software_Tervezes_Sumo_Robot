@@ -5,6 +5,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -40,6 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sumoroboto.R
 import kotlin.math.roundToInt
+
+// Exact background color matching the Sumo Robot logo
+private val LOGO_BACKGROUND_COLOR = Color(0xFF2D3B4B)
 
 @Composable
 fun SplashScreen(
@@ -52,7 +56,7 @@ fun SplashScreen(
         progress.animateTo(
             targetValue = 1f,
             animationSpec = tween(
-                durationMillis = 2400,
+                durationMillis = 2000,
                 easing = FastOutSlowInEasing
             )
         )
@@ -60,49 +64,40 @@ fun SplashScreen(
     }
 
     val currentPercent = (progress.value * 100).roundToInt()
-    val statusText = when {
-        currentPercent < 35 -> "INITIALIZING TELEMETRY CORE..."
-        currentPercent < 70 -> "PREPARING BLUETOOTH RFCOMM..."
-        currentPercent < 95 -> "CALIBRATING DOHYO SENSORS..."
-        else -> "SYSTEM READY"
-    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0F1216))
+            .background(LOGO_BACKGROUND_COLOR)
     ) {
-        // Hero Background Robot Image
-        Image(
-            painter = painterResource(id = R.drawable.sumo_robot_splash),
-            contentDescription = "Sumo Robot Splash",
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-
-        // Gradient Dark Vignette Overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xCC0A0D11),
-                            Color(0x220A0D11),
-                            Color(0xDD0A0D11),
-                            Color(0xFF0A0D11)
-                        )
-                    )
-                )
-        )
-
-        // Header Title
+        // Centered App Logo and Title
         Column(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 64.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .align(Alignment.Center)
+                .padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
+            // Logo Container with matching background & subtle outline
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .shadow(16.dp, RoundedCornerShape(28.dp))
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(LOGO_BACKGROUND_COLOR)
+                    .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(28.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_sumo_logo),
+                    contentDescription = "Sumo Robot Logo",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
             Text(
                 text = "MINI SUMO ROBOT",
                 fontSize = 24.sp,
@@ -110,22 +105,24 @@ fun SplashScreen(
                 letterSpacing = 3.sp,
                 color = Color.White
             )
-            Spacer(modifier = Modifier.height(4.dp))
+
+            Spacer(modifier = Modifier.height(6.dp))
+
             Text(
-                text = "TELEMETRY & REMOTE CONTROL",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
+                text = "TELEMETRY & LOGGING",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
-        // Bottom Loading Bar & Status
+        // Bottom Loading Bar & Skip Action
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp, vertical = 48.dp),
+                .padding(horizontal = 36.dp, vertical = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
@@ -134,10 +131,10 @@ fun SplashScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = statusText,
+                    text = "Loading system...",
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color.White.copy(alpha = 0.7f)
                 )
                 Text(
                     text = "$currentPercent%",
@@ -150,7 +147,6 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Tech Loading Bar
             LinearProgressIndicator(
                 progress = { progress.value },
                 modifier = Modifier
@@ -158,19 +154,19 @@ fun SplashScreen(
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp)),
                 color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                trackColor = Color.White.copy(alpha = 0.15f)
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Skip Button
             TextButton(
                 onClick = onFinished,
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentColor = Color.White.copy(alpha = 0.6f)
                 )
             ) {
                 Text("Skip", fontSize = 13.sp)
+                Spacer(modifier = Modifier.size(4.dp))
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
