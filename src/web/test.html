@@ -30,13 +30,13 @@
     </div>
 
     <div class="container">
-        <!-- BAL OLDAL: ÉLŐ ADATOK -->
+        <!-- LEFT PANEL: LIVE TELEMETRY -->
         <div class="panel">
             <div class="panel-header">ÉLŐ TELEMETRIA (Polling)</div>
             <div id="live-console" class="console-box">Várakozás a szerverre...<br></div>
         </div>
 
-        <!-- JOBB OLDAL: KERESŐ ÉS ELŐZMÉNYEK -->
+        <!-- RIGHT PANEL: DATABASE SEARCH AND HISTORY -->
         <div class="panel">
             <div class="panel-header">
                 ADATBÁZIS KERESŐ
@@ -80,7 +80,7 @@
             }
         }
 
-        // ÚJ FUNKCIÓ: Adatbázis keresése (Jobb oldal)
+        // Database search function (Right panel)
         async function searchHistory() {
             historyBox.innerHTML = "Keresés folyamatban...<br>";
             const type = document.getElementById("search-type").value;
@@ -108,14 +108,24 @@
             }
         }
 
-        // Élő adatok lekérése (Bal oldal)
+        // Poll live telemetry (Left panel)
         setInterval(async () => {
             try {
                 const response = await fetch(API_URL + "/api/telemetry");
                 if (response.ok) {
                     const data = await response.json();
                     if (data.is_simulating) {
-                        logToLive(`ÉLŐ ADAT -> Akku: ${data.bat}V | S1: ${data.s1}cm | S2: ${data.s2}cm`, "#00ffff");
+                        if (data.path === "HOT" && data.last_alert) {
+                            logToLive(
+                                `🚨 HOT PATH (safety_events) [${data.last_alert}] -> Akku: ${data.bat}V | S1: ${data.s1}cm | S2: ${data.s2}cm`,
+                                "#f44336"
+                            );
+                        } else {
+                            logToLive(
+                                `📝 COLD PATH (telemetry_logs) -> Akku: ${data.bat}V | S1: ${data.s1}cm | S2: ${data.s2}cm`,
+                                "#00ffff"
+                            );
+                        }
                     }
                 }
             } catch (error) {}

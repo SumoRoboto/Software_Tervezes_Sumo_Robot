@@ -1,8 +1,8 @@
 import io
+import json
 import os
 import random
 import sqlite3
-import json 
 from datetime import datetime
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
@@ -12,7 +12,7 @@ CORS(app)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "telemetry.db")
 
-# Memóriában futó globális szótár a robot állapotának tárolására
+# In-memory global dictionary to store the current robot state
 robot_state = {
     "mode": "MANUAL",
     "state": "STOP",
@@ -22,12 +22,18 @@ robot_state = {
     "s3": 0,
     "pwmA": 0,
     "pwmB": 0,
+    "last_alert": None,
+    "last_message": None,
+    "path": "COLD",
 }
+
+# Global flag tracking whether the telemetry simulator is active
+simulator_running = False
 
 
 def calculate_battery_percent(v: float) -> int:
     """
-    Pontosan a mobilalkalmazás (BatteryState.kt) számítási logikája:
+    Battery percentage calculation matching the mobile application (BatteryState.kt):
     - FULL_VOLTAGE = 8.4V (100%)
     - NOMINAL_VOLTAGE = 7.4V (50%)
     - MIN_VOLTAGE = 6.0V (0%)
@@ -46,13 +52,12 @@ def calculate_battery_percent(v: float) -> int:
     return max(0, min(100, int(ratio * 50)))
 
 
-
 def init_db():
-    """SQLite adatbázis inicializálása (Tanári elvárások + Hot/Cold Path + Mobil App)."""
+    """Initialize SQLite database tables (System Config, Hot/Cold Path, and Mobile App tables)."""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
 
-        
+        # 1. System configuration table for rule thresholds
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS system_config (
@@ -63,7 +68,6 @@ def init_db():
             """
         )
 
-       
         cursor.executemany(
             """
             INSERT OR IGNORE INTO system_config (config_key, config_value, description)
@@ -73,23 +77,23 @@ def init_db():
                 ("BATTERY_CRITICAL_MIN", 6.4, "Kritikus akkufeszültség (vészleállás)"),
                 ("BATTERY_WARNING_MIN", 6.8, "Alacsony akkufeszültség (figyelmeztetés)"),
                 ("OBSTACLE_CRITICAL_CM", 5.0, "Kritikus távolság akadálytól (cm)"),
-                ("MOTOR_PWM_MAX", 255.0, "Maximális engedélyezett motor PWM")
-            ]
+                ("MOTOR_PWM_MAX", 255.0, "Maximális engedélyezett motor PWM"),
+            ],
         )
 
-        # 2. Cold Path: Élő telemetriai napló (A tanár kérése: raw JSON mérések)
+        # 2. Cold Path: Live telemetry log table (stores raw JSON measurements)
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS telemetry_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL,
-                raw_measurement TEXT NOT NULL, -- Itt tároljuk a teljes JSON csomagot!
+                raw_measurement TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'OK'
             )
             """
         )
 
-        # 3. Hot Path: Biztonsági események (Riasztások)
+        # 3. Hot Path: Safety events table (stores critical rule violations and alerts)
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS safety_events (
@@ -98,12 +102,12 @@ def init_db():
                 severity TEXT NOT NULL,
                 rule_name TEXT NOT NULL,
                 message TEXT NOT NULL,
-                raw_measurement TEXT -- A hiba pillanatában lévő teljes adat JSON formátumban
+                raw_measurement TEXT
             )
             """
         )
 
-        # 4. Mobil App: Sessions tábla (Dani eredeti kódja érintetlenül)
+        # 4. Mobile App: Sessions summary table
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS sessions (
@@ -118,7 +122,7 @@ def init_db():
             """
         )
 
-        # 5. Mobil App: Telemetry points tábla (Dani eredeti kódja érintetlenül)
+        # 5. Mobile App: Session telemetry points table
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS telemetry_points (
@@ -140,59 +144,60 @@ def init_db():
         conn.commit()
 
 
-import threading
-import time
-import json
-import random
-
-# Globális változó, ami figyeli, hogy fut-e a szimulátor
-simulator_running = False
-
 def check_rules_and_log(measurement):
     """
-    Ez a RULE ENGINE! Megkapja a JSON adatot, és eldönti a sorsát.
+    Strict Rule Engine: Each measurement is routed to either the Hot Path (critical fault)
+    or the Cold Path (normal telemetry), never both at the same time.
     """
+    global robot_state
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    raw_json = json.dumps(measurement) # Szöveggé alakítjuk a JSON-t
-    
+    raw_json = json.dumps(measurement)
+
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        
-        # 1. Beolvassuk a határértékeket a config táblából (Data-Driven!)
+
+        # 1. Read threshold values from the system_config table
         cursor.execute("SELECT config_key, config_value FROM system_config")
         config = {row[0]: row[1] for row in cursor.fetchall()}
-        
-        # 2. Szabályok kiértékelése (Hot Path ellenőrzés)
+
+        # 2. Evaluate Hot Path (critical safety rules)
         is_critical = False
         rule_broken = ""
         message = ""
-        
+
         if measurement["bat"] <= config.get("BATTERY_CRITICAL_MIN", 6.4):
             is_critical = True
             rule_broken = "BATTERY_CRITICAL"
             message = "Kritikus akkufeszültség!"
-            
-        elif measurement["s1"] <= config.get("OBSTACLE_CRITICAL_CM", 5.0) or \
-             measurement["s2"] <= config.get("OBSTACLE_CRITICAL_CM", 5.0):
+
+        elif (
+            measurement["s1"] <= config.get("OBSTACLE_CRITICAL_CM", 5.0)
+            or measurement["s2"] <= config.get("OBSTACLE_CRITICAL_CM", 5.0)
+        ):
             is_critical = True
             rule_broken = "OBSTACLE_COLLISION"
             message = "Ütközésveszély! Túl közeli akadály."
 
-        # 3. Mentés az adatbázisba (Routing)
+        # 3. Mutually exclusive database insert (Hot Path vs. Cold Path)
         if is_critical:
-            # HOT PATH: Vészhelyzet van! Megy a safety_events táblába.
+            # Hot Path: Save only to safety_events
+            robot_state["last_alert"] = rule_broken
+            robot_state["last_message"] = message
+            robot_state["path"] = "HOT"
             cursor.execute(
                 """INSERT INTO safety_events (timestamp, severity, rule_name, message, raw_measurement)
                    VALUES (?, ?, ?, ?, ?)""",
-                (now, "CRITICAL", rule_broken, message, raw_json)
+                (now, "CRITICAL", rule_broken, message, raw_json),
             )
-            # Itt elvileg a robot_state-et át kéne állítani STOP-ra, ha lenne fizikai robot.
         else:
-            # COLD PATH: Minden normális, mehet a sima logok közé.
+            # Cold Path: Save only to telemetry_logs
+            robot_state["last_alert"] = None
+            robot_state["last_message"] = None
+            robot_state["path"] = "COLD"
             cursor.execute(
                 """INSERT INTO telemetry_logs (timestamp, raw_measurement, status)
                    VALUES (?, ?, ?)""",
-                (now, raw_json, "OK")
+                (now, raw_json, "OK"),
             )
         conn.commit()
 
@@ -200,49 +205,41 @@ def check_rules_and_log(measurement):
 @app.route("/api/telemetry", methods=["GET"])
 def get_telemetry():
     """
-    Telemetriai végpont (Végleges):
-    Csak lekérdezi a jelenlegi állapotot. Hozzáadja a simulator_running flag-et,
-    hogy a weboldal tudja, fut-e épp a szimuláció.
+    Live telemetry endpoint:
+    When simulator_running is True, generates exactly one new sample per poll,
+    evaluates it through the Rule Engine, logs it to SQLite, and returns it to the client.
+    This guarantees 1-to-1 synchronization between the web console and the database.
     """
-    # Lemásoljuk a state-et, hogy ne módosítsuk a globálist, csak kiegészítsük a válaszhoz
+    global robot_state
+    if simulator_running:
+        fake_data = {
+            "bat": round(random.uniform(6.0, 8.4), 2),
+            "s1": random.randint(2, 80),
+            "s2": random.randint(2, 80),
+            "pwmA": random.randint(0, 255),
+            "state": "FORWARD",
+        }
+        robot_state.update(fake_data)
+        check_rules_and_log(fake_data)
+
     response_data = robot_state.copy()
     response_data["is_simulating"] = simulator_running
     return jsonify(response_data), 200
 
-def simulator_worker():
-    """Ez a háttérszál (adatgenerátor), ami másodpercenként fut."""
-    global simulator_running, robot_state
-    while simulator_running:
-        # Generálunk egy "raw_measurement" JSON csomagot
-        fake_data = {
-            "bat": round(random.uniform(6.0, 8.4), 2),  
-            "s1": random.randint(2, 80),               
-            "s2": random.randint(2, 80),
-            "pwmA": random.randint(0, 255),
-            "state": "FORWARD"
-        }
-        
-        # Frissítjük a globális állapotot
-        robot_state.update(fake_data)
-        
-        # Beküldjük a Rule Engine-nek kiértékelésre és mentésre (SQLite-ba)
-        check_rules_and_log(fake_data)
-        
-        time.sleep(1)
 
 @app.route("/api/simulator/start", methods=["POST"])
 def start_simulator():
+    """Enable telemetry generation on subsequent /api/telemetry polls."""
     global simulator_running
     if not simulator_running:
         simulator_running = True
-        thread = threading.Thread(target=simulator_worker, daemon=True)
-        thread.start()
         return jsonify({"status": "ok", "message": "Szimulátor elindítva."}), 200
     return jsonify({"status": "ok", "message": "Már fut."}), 200
 
 
 @app.route("/api/simulator/stop", methods=["POST"])
 def stop_simulator():
+    """Disable telemetry generation."""
     global simulator_running
     simulator_running = False
     return jsonify({"status": "ok", "message": "Szimulátor leállítva."}), 200
@@ -250,22 +247,34 @@ def stop_simulator():
 
 @app.route("/api/database/clear", methods=["DELETE"])
 def clear_database():
-    """Törli a generált adatokat egyetlen gombnyomásra."""
+    """Clear all generated telemetry logs and safety events, and reset auto-increment IDs."""
+    global simulator_running
+    simulator_running = False
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM telemetry_logs")
         cursor.execute("DELETE FROM safety_events")
+        cursor.execute(
+            "DELETE FROM sqlite_sequence WHERE name IN ('telemetry_logs', 'safety_events')"
+        )
         conn.commit()
-    return jsonify({"status": "ok", "message": "Adatbázis (naplók és riasztások) sikeresen törölve."}), 200
-
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "message": "Adatbázis (naplók és riasztások) sikeresen törölve.",
+            }
+        ),
+        200,
+    )
 
 
 @app.route("/api/command", methods=["POST"])
 def post_command():
     """
-    Irányítási végpont:
-    JSON body-ban várja a parancsot (F, B, L, R, S), majd frissíti
-    a globális robot_state state, pwmA és pwmB értékeit.
+    Robot control endpoint:
+    Expects a command (F, B, L, R, S) in the JSON body and updates
+    the global robot_state (state, pwmA, pwmB).
     """
     data = request.get_json(silent=True) or {}
     cmd = (data.get("command") or data.get("cmd") or "").strip().upper()
@@ -299,8 +308,49 @@ def post_command():
     return jsonify({"status": "ok", "command": cmd, "robot_state": robot_state}), 200
 
 
+@app.route("/api/history", methods=["GET"])
+def get_history():
+    """
+    History and filter endpoint:
+    Can be filtered via URL query parameter: ?type=cold (normal logs) or ?type=hot (alerts).
+    """
+    req_type = request.args.get("type", "cold")
+    results = []
 
-# Adatbázis inicializálása induláskor
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+
+        if req_type == "hot":
+            # Query critical safety events (Hot Path)
+            rows = cursor.execute(
+                "SELECT timestamp, rule_name, message, raw_measurement FROM safety_events ORDER BY id DESC LIMIT 50"
+            ).fetchall()
+            for row in rows:
+                results.append(
+                    {
+                        "timestamp": row[0],
+                        "rule_broken": row[1],
+                        "message": row[2],
+                        "data": json.loads(row[3]) if row[3] else {},
+                    }
+                )
+        else:
+            # Query normal telemetry logs (Cold Path)
+            rows = cursor.execute(
+                "SELECT timestamp, raw_measurement FROM telemetry_logs ORDER BY id DESC LIMIT 50"
+            ).fetchall()
+            for row in rows:
+                results.append(
+                    {
+                        "timestamp": row[0],
+                        "data": json.loads(row[1]) if row[1] else {},
+                    }
+                )
+
+    return jsonify({"items": results}), 200
+
+
+# Initialize the database on server startup
 init_db()
 
 if __name__ == "__main__":
