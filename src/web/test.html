@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <title>Sumo Robot - Fejlesztői Pult</title>
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #fff; padding: 20px; display: flex; flex-direction: column; height: 90vh; }
+        .toolbar { margin-bottom: 20px; }
+        .btn { padding: 10px 15px; margin-right: 10px; font-weight: bold; cursor: pointer; border: none; border-radius: 4px; }
+        #btn-start { background: #4CAF50; color: white; }
+        #btn-stop { background: #f44336; color: white; }
+        #btn-clear { background: #ff9800; color: white; }
+        
+        .container { display: flex; gap: 20px; flex: 1; }
+        .panel { flex: 1; background: #000; border: 1px solid #555; display: flex; flex-direction: column; }
+        .panel-header { background: #333; padding: 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .console-box { padding: 15px; overflow-y: scroll; flex: 1; line-height: 1.5; }
+        
+        select { padding: 5px; background: #222; color: #fff; border: 1px solid #555; }
+        button.small { padding: 5px 10px; background: #2196F3; color: white; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h2>🤖 Sumo Robot - Fejlesztői Pult (Hot/Cold Path)</h2>
+    
+    <div class="toolbar">
+        <button id="btn-start" class="btn" onclick="callApi('/api/simulator/start', 'POST')">▶ Szimulátor START</button>
+        <button id="btn-stop" class="btn" onclick="callApi('/api/simulator/stop', 'POST')">⏹ Szimulátor STOP</button>
+        <button id="btn-clear" class="btn" onclick="callApi('/api/database/clear', 'DELETE')">🗑 Adatbázis TÖRLÉSE</button>
+    </div>
+
+    <div class="container">
+        <!-- BAL OLDAL: ÉLŐ ADATOK -->
+        <div class="panel">
+            <div class="panel-header">ÉLŐ TELEMETRIA (Polling)</div>
+            <div id="live-console" class="console-box">Várakozás a szerverre...<br></div>
+        </div>
+
+        <!-- JOBB OLDAL: KERESŐ ÉS ELŐZMÉNYEK -->
+        <div class="panel">
+            <div class="panel-header">
+                ADATBÁZIS KERESŐ
+                <div>
+                    <select id="search-type">
+                        <option value="cold">Normál Napló (Cold Path)</option>
+                        <option value="hot">Kritikus Riasztások (Hot Path)</option>
+                    </select>
+                    <button class="small" onclick="searchHistory()">Keresés 🔍</button>
+                </div>
+            </div>
+            <div id="history-console" class="console-box">Válassz típust és nyomj a Keresésre!<br></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        const liveBox = document.getElementById("live-console");
+        const historyBox = document.getElementById("history-console");
+
+        function logToLive(msg, color = "#00ff00") {
+            const time = new Date().toLocaleTimeString();
+            liveBox.innerHTML += `<span style="color: ${color}">[${time}] ${msg}</span><br>`;
+            liveBox.scrollTop = liveBox.scrollHeight; 
+        }
+
+        async function callApi(endpoint, method) {
+            try {
+                const response = await fetch(API_URL + endpoint, { method: method });
+                const data = await response.json();
+                
+                if (endpoint === '/api/database/clear') {
+                    liveBox.innerHTML = '';
+                    historyBox.innerHTML = 'Adatbázis törölve.<br>';
+                    logToLive("Adatbázis ÉS Webes Konzol törölve.", "#ff9800");
+                } else {
+                    logToLive(`Szerver válasz: ${data.message || data.status}`);
+                }
+            } catch (error) {
+                logToLive(`[HIBA] ${error.message}`, "#f44336");
+            }
+        }
+
+        // ÚJ FUNKCIÓ: Adatbázis keresése (Jobb oldal)
+        async function searchHistory() {
+            historyBox.innerHTML = "Keresés folyamatban...<br>";
+            const type = document.getElementById("search-type").value;
+            
+            try {
+                const response = await fetch(`${API_URL}/api/history?type=${type}`);
+                const data = await response.json();
+                
+                historyBox.innerHTML = "";
+                if (data.items.length === 0) {
+                    historyBox.innerHTML = "<span style='color:#777'>Nincs találat az adatbázisban.</span><br>";
+                    return;
+                }
+
+                data.items.forEach(item => {
+                    if (type === "hot") {
+                        historyBox.innerHTML += `<span style="color: #f44336">[${item.timestamp}] 🚨 ${item.rule_broken}: ${item.message}</span><br>`;
+                        historyBox.innerHTML += `<span style="color: #aaa">   Nyers adat: Akku ${item.data.bat}V, S1 ${item.data.s1}cm</span><br>`;
+                    } else {
+                        historyBox.innerHTML += `<span style="color: #00ffff">[${item.timestamp}] 📝 Akku: ${item.data.bat}V | S1: ${item.data.s1}cm | PWM: ${item.data.pwmA}</span><br>`;
+                    }
+                });
+            } catch (error) {
+                historyBox.innerHTML = `<span style="color: #f44336">[HIBA] ${error.message}</span><br>`;
+            }
+        }
+
+        // Élő adatok lekérése (Bal oldal)
+        setInterval(async () => {
+            try {
+                const response = await fetch(API_URL + "/api/telemetry");
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.is_simulating) {
+                        logToLive(`ÉLŐ ADAT -> Akku: ${data.bat}V | S1: ${data.s1}cm | S2: ${data.s2}cm`, "#00ffff");
+                    }
+                }
+            } catch (error) {}
+        }, 1000);
+    </script>
+</body>
+</html>
