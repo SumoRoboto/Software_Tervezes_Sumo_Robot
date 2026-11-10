@@ -21,11 +21,24 @@ object NetworkClient {
     const val DEFAULT_BASE_URL = "http://192.168.1.150:8000/"
     const val EMULATOR_BASE_URL = "http://10.0.2.2:8000/"
 
-    private val _baseUrlFlow = MutableStateFlow(DEFAULT_BASE_URL)
+    private fun isEmulator(): Boolean {
+        return (android.os.Build.FINGERPRINT.startsWith("generic")
+                || android.os.Build.FINGERPRINT.startsWith("unknown")
+                || android.os.Build.MODEL.contains("google_sdk")
+                || android.os.Build.MODEL.contains("Emulator")
+                || android.os.Build.MODEL.contains("Android SDK built for x86")
+                || android.os.Build.MANUFACTURER.contains("Genymotion")
+                || android.os.Build.HARDWARE.contains("goldfish")
+                || android.os.Build.HARDWARE.contains("ranchu"))
+    }
+
+    private val initialBaseUrl = if (isEmulator()) EMULATOR_BASE_URL else DEFAULT_BASE_URL
+
+    private val _baseUrlFlow = MutableStateFlow(initialBaseUrl)
     val baseUrlFlow: StateFlow<String> = _baseUrlFlow.asStateFlow()
 
     @Volatile
-    var currentBaseUrl: String = DEFAULT_BASE_URL
+    var currentBaseUrl: String = initialBaseUrl
         private set
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {

@@ -247,22 +247,24 @@ def stop_simulator():
 
 @app.route("/api/database/clear", methods=["DELETE"])
 def clear_database():
-    """Clear all generated telemetry logs and safety events, and reset auto-increment IDs."""
+    """Clear all generated telemetry logs, safety events, and sessions, resetting auto-increment IDs."""
     global simulator_running
     simulator_running = False
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM telemetry_logs")
         cursor.execute("DELETE FROM safety_events")
+        cursor.execute("DELETE FROM telemetry_points")
+        cursor.execute("DELETE FROM sessions")
         cursor.execute(
-            "DELETE FROM sqlite_sequence WHERE name IN ('telemetry_logs', 'safety_events')"
+            "DELETE FROM sqlite_sequence WHERE name IN ('telemetry_logs', 'safety_events', 'sessions', 'telemetry_points')"
         )
         conn.commit()
     return (
         jsonify(
             {
                 "status": "ok",
-                "message": "Adatbázis (naplók és riasztások) sikeresen törölve.",
+                "message": "Adatbázis (naplók, riasztások és munkamenetek) sikeresen törölve.",
             }
         ),
         200,
@@ -312,46 +314,207 @@ def post_command():
 def get_history():
     """
     History and filter endpoint:
-    Can be filtered via URL query parameter: ?type=cold (normal logs) or ?type=hot (alerts).
+    Can be filtered via URL query parameter:
+    ?type=cold (normal logs), ?type=hot (alerts), or ?type=all (both).
+    Optional search keyword filter: ?q=query
     """
-    req_type = request.args.get("type", "cold")
+    req_type = request.args.get("type", "all").lower()
+    q = (request.args.get("q") or "").strip().lower()
     results = []
 
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
 
-        if req_type == "hot":
+        if req_type in ("hot", "all"):
             # Query critical safety events (Hot Path)
             rows = cursor.execute(
-                "SELECT timestamp, rule_name, message, raw_measurement FROM safety_events ORDER BY id DESC LIMIT 50"
+                "SELECT timestamp, rule_name, message, raw_measurement FROM safety_events ORDER BY id DESC LIMIT 100"
             ).fetchall()
             for row in rows:
-                results.append(
-                    {
-                        "timestamp": row[0],
-                        "rule_broken": row[1],
-                        "message": row[2],
-                        "data": json.loads(row[3]) if row[3] else {},
-                    }
-                )
-        else:
+                meas = json.loads(row[3]) if row[3] else {}
+                item = {
+                    "type": "HOT",
+                    "timestamp": row[0],
+                    "rule_broken": row[1],
+                    "message": row[2],
+                    "data": meas,
+                }
+                if not q or q in item["rule_broken"].lower() or q in item["message"].lower() or q in json.dumps(meas).lower():
+                    results.append(item)
+
+        if req_type in ("cold", "all"):
             # Query normal telemetry logs (Cold Path)
             rows = cursor.execute(
-                "SELECT timestamp, raw_measurement FROM telemetry_logs ORDER BY id DESC LIMIT 50"
+                "SELECT timestamp, raw_measurement, status FROM telemetry_logs ORDER BY id DESC LIMIT 100"
             ).fetchall()
             for row in rows:
-                results.append(
-                    {
-                        "timestamp": row[0],
-                        "data": json.loads(row[1]) if row[1] else {},
-                    }
+                meas = json.loads(row[1]) if row[1] else {}
+                item = {
+                    "type": "COLD",
+                    "timestamp": row[0],
+                    "rule_broken": None,
+                    "message": "OK",
+                    "data": meas,
+                }
+                if not q or q in json.dumps(meas).lower() or q in item["timestamp"].lower():
+                    results.append(item)
+
+        if req_type == "all":
+            results.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    return jsonify({"items": results[:100]}), 200
+
+
+@app.route("/api/sessions", methods=["POST"])
+def upload_session():
+    """
+    Receives session telemetry upload from Android app or web client.
+    Persists session summary in 'sessions' and points in 'telemetry_points'.
+    Evaluates points through the Rule Engine into Cold/Hot Path tables.
+    """
+    data = request.get_json(silent=True) or {}
+    session_type = data.get("session_type", "FREE_ROAM")
+    created_at = data.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    duration_ms = int(data.get("duration_ms", 0))
+    start_vbat = float(data.get("start_vbat", 8.4))
+    end_vbat = float(data.get("end_vbat", 8.4))
+    notes = data.get("notes", "")
+    points = data.get("points", [])
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO sessions (session_type, created_at, duration_ms, start_vbat, end_vbat, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (session_type, created_at, duration_ms, start_vbat, end_vbat, notes),
+        )
+        session_id = cursor.lastrowid
+
+        point_records = []
+        for p in points:
+            rel_time = int(p.get("rel_time_ms", 0))
+            vbat = float(p.get("vbat", 0.0))
+            dist_l = int(p.get("dist_l", 0))
+            dist_r = int(p.get("dist_r", 0))
+            line_l = int(p.get("line_l", 0))
+            line_r = int(p.get("line_r", 0))
+            pwm_l = int(p.get("pwm_l", 0))
+            pwm_r = int(p.get("pwm_r", 0))
+            point_records.append((session_id, rel_time, vbat, dist_l, dist_r, line_l, line_r, pwm_l, pwm_r))
+
+        if point_records:
+            cursor.executemany(
+                """
+                INSERT INTO telemetry_points (session_id, rel_time_ms, vbat, dist_l, dist_r, line_l, line_r, pwm_l, pwm_r)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                point_records,
+            )
+
+        # Mirror points into cold/hot path tables via Rule Engine criteria
+        for p in points:
+            meas = {
+                "bat": float(p.get("vbat", 8.4)),
+                "s1": int(p.get("dist_l", 50)),
+                "s2": int(p.get("dist_r", 50)),
+                "pwmA": int(p.get("pwm_l", 0)),
+                "pwmB": int(p.get("pwm_r", 0)),
+                "state": session_type,
+            }
+            if meas["bat"] <= 6.4:
+                cursor.execute(
+                    """INSERT INTO safety_events (timestamp, severity, rule_name, message, raw_measurement)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (created_at, "CRITICAL", "BATTERY_CRITICAL", f"Session #{session_id}: Kritikus akku ({meas['bat']}V)", json.dumps(meas)),
+                )
+            elif meas["s1"] <= 5 or meas["s2"] <= 5:
+                cursor.execute(
+                    """INSERT INTO safety_events (timestamp, severity, rule_name, message, raw_measurement)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (created_at, "CRITICAL", "OBSTACLE_COLLISION", f"Session #{session_id}: Ütközésveszély! ({min(meas['s1'], meas['s2'])}cm)", json.dumps(meas)),
+                )
+            else:
+                cursor.execute(
+                    """INSERT INTO telemetry_logs (timestamp, raw_measurement, status)
+                       VALUES (?, ?, ?)""",
+                    (created_at, json.dumps(meas), "OK"),
                 )
 
-    return jsonify({"items": results}), 200
+        conn.commit()
+
+    return jsonify({
+        "status": "success",
+        "session_id": session_id,
+        "saved_points": len(points),
+        "message": f"Munkamenet #{session_id} sikeresen mentve ({len(points)} pont)."
+    }), 201
+
+
+@app.route("/api/sessions", methods=["GET"])
+def get_sessions():
+    """Returns a summary list of all recorded sessions."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        rows = cursor.execute(
+            """
+            SELECT s.id, s.session_type, s.created_at, s.duration_ms, s.start_vbat, s.end_vbat, s.notes,
+                   COUNT(p.id) as point_count
+            FROM sessions s
+            LEFT JOIN telemetry_points p ON s.id = p.session_id
+            GROUP BY s.id
+            ORDER BY s.id DESC
+            """
+        ).fetchall()
+
+        results = []
+        for r in rows:
+            results.append({
+                "id": r[0],
+                "session_type": r[1],
+                "created_at": r[2],
+                "duration_ms": r[3],
+                "start_vbat": r[4],
+                "end_vbat": r[5],
+                "notes": r[6] or "",
+                "point_count": r[7]
+            })
+    return jsonify(results), 200
+
+
+@app.route("/api/sessions/<int:session_id>/points", methods=["GET"])
+def get_session_points(session_id):
+    """Returns all telemetry points for a given session."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        rows = cursor.execute(
+            """
+            SELECT rel_time_ms, vbat, dist_l, dist_r, line_l, line_r, pwm_l, pwm_r
+            FROM telemetry_points
+            WHERE session_id = ?
+            ORDER BY rel_time_ms ASC
+            """,
+            (session_id,)
+        ).fetchall()
+
+        points = []
+        for r in rows:
+            points.append({
+                "rel_time_ms": r[0],
+                "vbat": r[1],
+                "dist_l": r[2],
+                "dist_r": r[3],
+                "line_l": r[4],
+                "line_r": r[5],
+                "pwm_l": r[6],
+                "pwm_r": r[7]
+            })
+    return jsonify({"session_id": session_id, "points": points}), 200
 
 
 # Initialize the database on server startup
 init_db()
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+    app.run(host="0.0.0.0", port=8000, debug=True)
