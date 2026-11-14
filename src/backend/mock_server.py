@@ -3,6 +3,8 @@ import json
 import os
 import random
 import sqlite3
+import threading
+import time
 from datetime import datetime
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
@@ -27,8 +29,10 @@ robot_state = {
     "path": "COLD",
 }
 
-# Global flag tracking whether the telemetry simulator is active
+# Global flags tracking whether the telemetry simulator is active
 simulator_running = False
+current_sim_session_id = None
+current_sim_start_time = None
 
 
 def calculate_battery_percent(v: float) -> int:
@@ -202,47 +206,174 @@ def check_rules_and_log(measurement):
         conn.commit()
 
 
+sim_battery_ocv = 8.35
+
 @app.route("/api/telemetry", methods=["GET"])
 def get_telemetry():
     """
     Live telemetry endpoint:
-    When simulator_running is True, generates exactly one new sample per poll,
-    evaluates it through the Rule Engine, logs it to SQLite, and returns it to the client.
-    This guarantees 1-to-1 synchronization between the web console and the database.
+    When simulator_running is True, returns current synchronized robot state.
     """
-    global robot_state
-    if simulator_running:
-        fake_data = {
-            "bat": round(random.uniform(6.0, 8.4), 2),
-            "s1": random.randint(2, 80),
-            "s2": random.randint(2, 80),
-            "pwmA": random.randint(0, 255),
-            "state": "FORWARD",
-        }
-        robot_state.update(fake_data)
-        check_rules_and_log(fake_data)
-
     response_data = robot_state.copy()
     response_data["is_simulating"] = simulator_running
     return jsonify(response_data), 200
 
 
+def simulator_worker():
+    """Background thread that automatically generates and stores telemetry points for the active session."""
+    global simulator_running, current_sim_session_id, current_sim_start_time, robot_state, sim_battery_ocv
+    combat_ticks = 0
+    s1, s2 = 45, 50
+    pwma, pwmb = 110, 110
+
+    while simulator_running and current_sim_session_id is not None:
+        time.sleep(0.5)
+        if not simulator_running or current_sim_session_id is None:
+            break
+
+        rel_ms = int((time.time() - current_sim_start_time) * 1000)
+
+        # Simulation state machine (Combat vs Roam vs Idle)
+        if combat_ticks > 0:
+            combat_ticks -= 1
+            s1 = random.randint(3, 14)
+            s2 = random.randint(3, 14)
+            pwma = random.randint(210, 255)
+            pwmb = random.randint(210, 255)
+            state_label = "COMBAT_PUSH"
+        else:
+            if random.random() < 0.20:
+                combat_ticks = random.randint(5, 12)  # 2.5 - 6s combat encounter
+            is_idle = random.random() < 0.25
+            if is_idle:
+                pwma = 0
+                pwmb = 0
+                s1 = random.randint(35, 65)
+                s2 = random.randint(35, 65)
+                state_label = "IDLE_SCAN"
+            else:
+                pwma = random.randint(90, 130)
+                pwmb = random.randint(90, 130)
+                s1 = random.randint(25, 60)
+                s2 = random.randint(25, 60)
+                state_label = "ROAMING"
+
+        is_combat = (combat_ticks > 0) or (s1 <= 25 or s2 <= 25) or (pwma + pwmb) > 380
+        is_heavy = (s1 <= 10 or s2 <= 10) and (pwma + pwmb) > 420
+
+        # Load-based dynamic battery discharge
+        if is_heavy:
+            drain = random.uniform(0.0018, 0.0028)
+        elif is_combat:
+            drain = random.uniform(0.0009, 0.0016)
+        elif pwma == 0 and pwmb == 0:
+            drain = 0.00004
+        else:
+            drain = random.uniform(0.0001, 0.00025)
+
+        sim_battery_ocv = max(6.4, sim_battery_ocv - drain)
+        motor_load = min(1.0, (pwma + pwmb) / 510.0)
+        ir_drop = motor_load * 0.035 if is_combat else motor_load * 0.012
+        bat = round(max(6.0, sim_battery_ocv - ir_drop), 2)
+
+        fake_data = {
+            "bat": bat,
+            "s1": s1,
+            "s2": s2,
+            "pwmA": pwma,
+            "pwmB": pwmb,
+            "state": state_label,
+        }
+        robot_state.update(fake_data)
+        check_rules_and_log(fake_data)
+
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO telemetry_points (session_id, rel_time_ms, vbat, dist_l, dist_r, line_l, line_r, pwm_l, pwm_r)
+                    VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)
+                    """,
+                    (current_sim_session_id, rel_ms, bat, s1, s2, pwma, pwmb),
+                )
+                cursor.execute(
+                    """
+                    UPDATE sessions SET duration_ms = ?, end_vbat = ? WHERE id = ?
+                    """,
+                    (rel_ms, bat, current_sim_session_id),
+                )
+                conn.commit()
+        except Exception as e:
+            print(f"[Simulator Worker Error] {e}")
+
+
 @app.route("/api/simulator/start", methods=["POST"])
 def start_simulator():
-    """Enable telemetry generation on subsequent /api/telemetry polls."""
-    global simulator_running
+    """Starts simulated telemetry generation, creates a new session in SQLite, and streams points."""
+    global simulator_running, current_sim_session_id, current_sim_start_time, sim_battery_ocv
     if not simulator_running:
         simulator_running = True
-        return jsonify({"status": "ok", "message": "Szimulátor elindítva."}), 200
-    return jsonify({"status": "ok", "message": "Már fut."}), 200
+        sim_battery_ocv = 8.35
+        current_sim_start_time = time.time()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO sessions (session_type, created_at, duration_ms, start_vbat, end_vbat, notes)
+                VALUES (?, ?, 0, 8.4, 8.4, 'Szimulált Menet (MATCH)')
+                """,
+                ("MATCH", now_str),
+            )
+            current_sim_session_id = cursor.lastrowid
+            conn.commit()
+
+        threading.Thread(target=simulator_worker, daemon=True).start()
+        return (
+            jsonify(
+                {
+                    "status": "ok",
+                    "session_id": current_sim_session_id,
+                    "message": f"Szimulátor elindítva (Új Session #{current_sim_session_id}).",
+                }
+            ),
+            200,
+        )
+    return jsonify({"status": "ok", "session_id": current_sim_session_id, "message": "Már fut."}), 200
 
 
 @app.route("/api/simulator/stop", methods=["POST"])
 def stop_simulator():
-    """Disable telemetry generation."""
-    global simulator_running
+    """Stops telemetry generation and finalizes the current session in SQLite."""
+    global simulator_running, current_sim_session_id, current_sim_start_time
+    saved_id = current_sim_session_id
     simulator_running = False
-    return jsonify({"status": "ok", "message": "Szimulátor leállítva."}), 200
+
+    if current_sim_session_id and current_sim_start_time:
+        duration_ms = int((time.time() - current_sim_start_time) * 1000)
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE sessions SET duration_ms = ?, end_vbat = ? WHERE id = ?",
+                    (duration_ms, robot_state.get("bat", 8.4), current_sim_session_id),
+                )
+                conn.commit()
+        except Exception as e:
+            print(f"[Simulator Stop Error] {e}")
+
+    current_sim_session_id = None
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "message": f"Szimulátor leállítva (Session #{saved_id} mentve az adatbázisba).",
+            }
+        ),
+        200,
+    )
 
 
 @app.route("/api/database/clear", methods=["DELETE"])

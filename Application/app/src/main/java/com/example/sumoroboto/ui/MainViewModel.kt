@@ -131,6 +131,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Collect telemetry stream
         viewModelScope.launch {
             bluetoothManager.telemetryFlow.collect { data ->
+                // When in-app generator is actively generating, avoid overriding live telemetry & battery
+                if (_historyUiState.value.isAppGenerating) {
+                    return@collect
+                }
+
                 _telemetry.value = data
                 _batteryState.value = data.battery
                 csvLogger.logSample(data)
@@ -342,7 +347,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * In-App Telemetry Generator matching the backend simulator:
      * Generates realistic telemetry (VBat: 6.0-8.4V, Dist: 2-80cm, PWM: 0-255).
-     * Enforces the Rule Engine: Hot Path (bat <= 6.4V or dist <= 5cm) vs. Cold Path.
+     * Automatically starts a new session on launch, and upon stopping, uploads
+     * the entire session and its points to the backend / SQLite database.
      */
     fun toggleInAppTelemetryGenerator() {
         if (inAppGeneratorJob != null) {
@@ -350,71 +356,144 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             inAppGeneratorJob = null
             _historyUiState.value = _historyUiState.value.copy(
                 isAppGenerating = false,
-                statusMessage = "In-app generátor leállítva."
+                statusMessage = "Munkamenet lezárása és feltöltése a szerverre..."
             )
+
+            // Stop and upload session to backend
+            if (sessionRecorder.state.value.isRecording) {
+                val endVbat = _telemetry.value.vBat
+                sessionRecorder.stopAndUploadSession(
+                    endVbat = endVbat,
+                    notes = "In-App Generált Futam (MATCH)"
+                ) { success, msg ->
+                    viewModelScope.launch {
+                        delay(250)
+                        fetchHistory()
+                        _historyUiState.value = _historyUiState.value.copy(
+                            statusMessage = if (success) "Új munkamenet sikeresen mentve az adatbázisba!" else "Feltöltési hiba: $msg",
+                            isError = !success
+                        )
+                    }
+                }
+            } else {
+                _historyUiState.value = _historyUiState.value.copy(
+                    statusMessage = "In-app generátor leállítva."
+                )
+            }
         } else {
+            val initialVbat = 8.35f
+            sessionRecorder.startSession(sessionType = "MATCH", startVbat = initialVbat)
+
             _historyUiState.value = _historyUiState.value.copy(
                 isAppGenerating = true,
-                statusMessage = "In-app generátor aktív (Rule Engine értékeléssel)..."
+                statusMessage = "In-app generátor fut (Új Session rögzítése)..."
             )
             inAppGeneratorJob = viewModelScope.launch(Dispatchers.Default) {
                 val random = java.util.Random()
-                var simBattery = 8.35f
+                var simOcv = initialVbat
                 val simStart = System.currentTimeMillis()
+
+                var combatTicksLeft = 0
+                var currentDistL = 50
+                var currentDistR = 50
+                var currentPwmL = 110
+                var currentPwmR = 110
+                var currentLineL = false
+                var currentLineR = false
 
                 while (isActive) {
                     delay(200) // 5 Hz update rate
 
-                    // Simulated battery drain with occasional critical drop
-                    if (random.nextFloat() < 0.06f) {
-                        simBattery = 6.25f // Triggers BATTERY_CRITICAL Hot Path rule
+                    // Sumo match simulation cycle:
+                    // 1) Active combat / pushing against opponent: close distance, full motor throttle
+                    // 2) Roaming / Search / Idle: moderate to low throttle, obstacle far away
+                    if (combatTicksLeft > 0) {
+                        combatTicksLeft--
+                        currentDistL = random.nextInt(12) + 3 // 3-14 cm (close combat)
+                        currentDistR = random.nextInt(12) + 3
+                        currentPwmL = random.nextInt(46) + 210 // 210-255 (full push power)
+                        currentPwmR = random.nextInt(46) + 210
+                        currentLineL = random.nextFloat() < 0.08f // Line edge encounter during struggle
+                        currentLineR = random.nextFloat() < 0.08f
                     } else {
-                        simBattery = (simBattery - 0.001f).coerceIn(6.6f, 8.4f)
+                        // 15% probability per tick to detect opponent and engage in a 12-25 tick (2.4 - 5.0 s) fight
+                        if (random.nextFloat() < 0.15f) {
+                            combatTicksLeft = random.nextInt(14) + 12
+                        }
+
+                        val isIdling = random.nextFloat() < 0.20f
+                        if (isIdling) {
+                            // Paused / orienting
+                            currentPwmL = 0
+                            currentPwmR = 0
+                            currentDistL = random.nextInt(25) + 40
+                            currentDistR = random.nextInt(25) + 40
+                            currentLineL = false
+                            currentLineR = false
+                        } else {
+                            // Gentle cruising / search
+                            currentPwmL = random.nextInt(35) + 90
+                            currentPwmR = random.nextInt(35) + 90
+                            currentDistL = random.nextInt(35) + 25
+                            currentDistR = random.nextInt(35) + 25
+                            currentLineL = random.nextFloat() < 0.02f
+                            currentLineR = random.nextFloat() < 0.02f
+                        }
                     }
 
-                    // Obstacle sensors: 12% probability of collision danger <= 5cm
-                    val distL = if (random.nextFloat() < 0.12f) random.nextInt(4) + 2 else random.nextInt(65) + 10
-                    val distR = if (random.nextFloat() < 0.12f) random.nextInt(4) + 2 else random.nextInt(65) + 10
-                    val pwmL = random.nextInt(155) + 100
-                    val pwmR = random.nextInt(155) + 100
-                    val lineL = random.nextFloat() < 0.05f
-                    val lineR = random.nextFloat() < 0.05f
+                    val isCombat = combatTicksLeft > 0 || currentDistL <= 25 || currentDistR <= 25 || (currentPwmL + currentPwmR) > 380 || currentLineL || currentLineR
+                    val isHeavyCombat = (currentDistL <= 10 || currentDistR <= 10) && (currentPwmL + currentPwmR) > 420
+
+                    // Dynamic load-based battery discharge rate
+                    val drainPerTick = when {
+                        isHeavyCombat -> 0.0006f + random.nextFloat() * 0.0004f // Heavy fight drain (~0.003-0.005 V/s)
+                        isCombat -> 0.00035f + random.nextFloat() * 0.00025f   // Active maneuver (~0.0018-0.003 V/s)
+                        (currentPwmL == 0 && currentPwmR == 0) -> 0.000015f     // Idle/standby (~0.000075 V/s, steady %)
+                        else -> 0.00004f + random.nextFloat() * 0.00003f       // Gentle roam (~0.0002-0.00035 V/s)
+                    }
+
+                    simOcv = (simOcv - drainPerTick).coerceIn(6.4f, 8.4f)
+
+                    // Load sag (IR voltage drop under motor load)
+                    val motorLoad = ((currentPwmL + currentPwmR) / 510f).coerceIn(0f, 1f)
+                    val irDrop = if (isCombat) (motorLoad * 0.035f) else (motorLoad * 0.012f)
+                    val terminalVbat = kotlin.math.round((simOcv - irDrop) * 100f) / 100f
 
                     val simulatedTelemetry = TelemetryData(
-                        distL = distL,
-                        distR = distR,
-                        lineL = lineL,
-                        lineR = lineR,
-                        vBat = simBattery,
-                        battery = BatteryState.fromVoltage(simBattery),
+                        distL = currentDistL,
+                        distR = currentDistR,
+                        lineL = currentLineL,
+                        lineR = currentLineR,
+                        vBat = terminalVbat,
+                        battery = BatteryState.fromVoltage(terminalVbat),
                         timestamp = System.currentTimeMillis()
                     )
 
                     _telemetry.value = simulatedTelemetry
                     _batteryState.value = simulatedTelemetry.battery
-                    _currentPwmL.value = pwmL
-                    _currentPwmR.value = pwmR
+                    _currentPwmL.value = currentPwmL
+                    _currentPwmR.value = currentPwmR
 
                     // Feed session recorder if an active match or free-roam session is running
                     sessionRecorder.recordPoint(
-                        vbat = simBattery,
-                        distL = distL,
-                        distR = distR,
-                        lineL = if (lineL) 1 else 0,
-                        lineR = if (lineR) 1 else 0,
-                        pwmL = pwmL,
-                        pwmR = pwmR
+                        vbat = terminalVbat,
+                        distL = currentDistL,
+                        distR = currentDistR,
+                        lineL = if (currentLineL) 1 else 0,
+                        lineR = if (currentLineR) 1 else 0,
+                        pwmL = currentPwmL,
+                        pwmR = currentPwmR
                     )
 
                     val pt = TelemetryPointDto(
                         relTimeMs = System.currentTimeMillis() - simStart,
-                        vbat = simBattery,
-                        distL = distL,
-                        distR = distR,
-                        lineL = if (lineL) 1 else 0,
-                        lineR = if (lineR) 1 else 0,
-                        pwmL = pwmL,
-                        pwmR = pwmR
+                        vbat = terminalVbat,
+                        distL = currentDistL,
+                        distR = currentDistR,
+                        lineL = if (currentLineL) 1 else 0,
+                        lineR = if (currentLineR) 1 else 0,
+                        pwmL = currentPwmL,
+                        pwmR = currentPwmR
                     )
                     appendLivePoint(pt)
                 }

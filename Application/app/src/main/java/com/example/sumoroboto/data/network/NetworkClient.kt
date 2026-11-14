@@ -20,6 +20,7 @@ object NetworkClient {
 
     const val DEFAULT_BASE_URL = "http://192.168.1.150:8000/"
     const val EMULATOR_BASE_URL = "http://10.0.2.2:8000/"
+    const val LOCALHOST_BASE_URL = "http://127.0.0.1:8000/"
 
     private fun isEmulator(): Boolean {
         return (android.os.Build.FINGERPRINT.startsWith("generic")
@@ -32,7 +33,7 @@ object NetworkClient {
                 || android.os.Build.HARDWARE.contains("ranchu"))
     }
 
-    private val initialBaseUrl = if (isEmulator()) EMULATOR_BASE_URL else DEFAULT_BASE_URL
+    private val initialBaseUrl = if (isEmulator()) LOCALHOST_BASE_URL else DEFAULT_BASE_URL
 
     private val _baseUrlFlow = MutableStateFlow(initialBaseUrl)
     val baseUrlFlow: StateFlow<String> = _baseUrlFlow.asStateFlow()

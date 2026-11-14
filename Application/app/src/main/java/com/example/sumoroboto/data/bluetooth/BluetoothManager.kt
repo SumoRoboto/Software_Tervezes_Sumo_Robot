@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import com.example.sumoroboto.data.model.BatteryState
 import com.example.sumoroboto.data.model.RobotMode
 import com.example.sumoroboto.data.model.TelemetryData
 import kotlinx.coroutines.CoroutineScope
@@ -307,7 +308,7 @@ class BluetoothManager(
     private fun startSimulationLoop() {
         simulationJob?.cancel()
         simulationJob = scope.launch(Dispatchers.Default) {
-            var simBattery = 7.92f
+            var simOcv = 8.25f
             var distanceL = 45
             var distanceR = 48
             var lineL = false
@@ -316,11 +317,24 @@ class BluetoothManager(
             while (isActive && isSimulated) {
                 delay(40) // ~25 Hz telemetry stream
 
-                // Slowly drop voltage over long time
-                simBattery = (simBattery - 0.0001f).coerceAtLeast(6.2f)
+                val moving = (targetPwmL != 0 || targetPwmR != 0)
+                val motorLoad = (Math.abs(targetPwmL) + Math.abs(targetPwmR)) / 510f
+                val isHighLoad = motorLoad > 0.6f
+
+                // Realistic dynamic battery discharge rate based on motor load
+                val drain = when {
+                    isHighLoad -> 0.00008f + Random.nextFloat() * 0.00003f // Active high-load drive (~0.002-0.0028 V/s)
+                    moving -> 0.00003f + Random.nextFloat() * 0.00002f     // Gentle drive (~0.00075-0.0012 V/s)
+                    else -> 0.000002f                                      // Idle/standby (~0.00005 V/s, steady %)
+                }
+
+                simOcv = (simOcv - drain).coerceAtLeast(6.2f)
+
+                // IR drop under motor load
+                val irDrop = if (moving) motorLoad * 0.03f else 0f
+                val cleanVbat = kotlin.math.round((simOcv - irDrop) * 100f) / 100f
 
                 // Simulate sensor dynamics based on motor movement
-                val moving = (targetPwmL != 0 || targetPwmR != 0)
                 if (moving) {
                     distanceL = (distanceL + Random.nextInt(-3, 4)).coerceIn(8, 70)
                     distanceR = (distanceR + Random.nextInt(-3, 4)).coerceIn(8, 70)
@@ -337,7 +351,8 @@ class BluetoothManager(
                     distR = distanceR,
                     lineL = lineL,
                     lineR = lineR,
-                    vBat = simBattery,
+                    vBat = cleanVbat,
+                    battery = BatteryState.fromVoltage(cleanVbat),
                     timestamp = System.currentTimeMillis()
                 )
                 _telemetryFlow.emit(simulatedData)
