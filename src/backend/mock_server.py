@@ -29,10 +29,14 @@ robot_state = {
     "path": "COLD",
 }
 
-# Global flags tracking whether the telemetry simulator is active
+# Simulator state and synchronization locks
+sim_lock = threading.Lock()
 simulator_running = False
 current_sim_session_id = None
 current_sim_start_time = None
+last_sim_step_time = 0.0
+sim_battery_ocv = 8.35
+combat_ticks = 0
 
 
 def calculate_battery_percent(v: float) -> int:
@@ -61,7 +65,7 @@ def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
 
-        # 1. System configuration table for rule thresholds
+        # 1. System configuration table for rule thresholds (Data-Driven)
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS system_config (
@@ -148,133 +152,96 @@ def init_db():
         conn.commit()
 
 
-def check_rules_and_log(measurement):
+def evaluate_and_route(cursor, measurement, timestamp_str, prefix=""):
     """
-    Strict Rule Engine: Each measurement is routed to either the Hot Path (critical fault)
-    or the Cold Path (normal telemetry), never both at the same time.
+    Centralized Data-Driven Rule Engine:
+    Reads thresholds from system_config and routes the measurement exclusively
+    to either safety_events (Hot Path) or telemetry_logs (Cold Path).
     """
-    global robot_state
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("SELECT config_key, config_value FROM system_config")
+    config = {row[0]: row[1] for row in cursor.fetchall()}
+
+    bat_crit = config.get("BATTERY_CRITICAL_MIN", 6.4)
+    obs_crit = config.get("OBSTACLE_CRITICAL_CM", 5.0)
+
+    is_critical = False
+    rule_broken = None
+    message = "OK"
+
+    if measurement["bat"] <= bat_crit:
+        is_critical = True
+        rule_broken = "BATTERY_CRITICAL"
+        message = f"{prefix}Kritikus akkufeszültség ({measurement['bat']}V)!"
+    elif measurement["s1"] <= obs_crit or measurement["s2"] <= obs_crit:
+        is_critical = True
+        rule_broken = "OBSTACLE_COLLISION"
+        message = f"{prefix}Ütközésveszély! Túl közeli akadály ({min(measurement['s1'], measurement['s2'])}cm)."
+
     raw_json = json.dumps(measurement)
 
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-
-        # 1. Read threshold values from the system_config table
-        cursor.execute("SELECT config_key, config_value FROM system_config")
-        config = {row[0]: row[1] for row in cursor.fetchall()}
-
-        # 2. Evaluate Hot Path (critical safety rules)
-        is_critical = False
-        rule_broken = ""
-        message = ""
-
-        if measurement["bat"] <= config.get("BATTERY_CRITICAL_MIN", 6.4):
-            is_critical = True
-            rule_broken = "BATTERY_CRITICAL"
-            message = "Kritikus akkufeszültség!"
-
-        elif (
-            measurement["s1"] <= config.get("OBSTACLE_CRITICAL_CM", 5.0)
-            or measurement["s2"] <= config.get("OBSTACLE_CRITICAL_CM", 5.0)
-        ):
-            is_critical = True
-            rule_broken = "OBSTACLE_COLLISION"
-            message = "Ütközésveszély! Túl közeli akadály."
-
-        # 3. Mutually exclusive database insert (Hot Path vs. Cold Path)
-        if is_critical:
-            # Hot Path: Save only to safety_events
-            robot_state["last_alert"] = rule_broken
-            robot_state["last_message"] = message
-            robot_state["path"] = "HOT"
-            cursor.execute(
-                """INSERT INTO safety_events (timestamp, severity, rule_name, message, raw_measurement)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (now, "CRITICAL", rule_broken, message, raw_json),
-            )
-        else:
-            # Cold Path: Save only to telemetry_logs
-            robot_state["last_alert"] = None
-            robot_state["last_message"] = None
-            robot_state["path"] = "COLD"
-            cursor.execute(
-                """INSERT INTO telemetry_logs (timestamp, raw_measurement, status)
-                   VALUES (?, ?, ?)""",
-                (now, raw_json, "OK"),
-            )
-        conn.commit()
+    if is_critical:
+        cursor.execute(
+            """INSERT INTO safety_events (timestamp, severity, rule_name, message, raw_measurement)
+               VALUES (?, ?, ?, ?, ?)""",
+            (timestamp_str, "CRITICAL", rule_broken, message, raw_json),
+        )
+        return "HOT", rule_broken, message
+    else:
+        cursor.execute(
+            """INSERT INTO telemetry_logs (timestamp, raw_measurement, status)
+               VALUES (?, ?, ?)""",
+            (timestamp_str, raw_json, "OK"),
+        )
+        return "COLD", None, None
 
 
-sim_battery_ocv = 8.35
-
-@app.route("/api/telemetry", methods=["GET"])
-def get_telemetry():
+def generate_simulation_step():
     """
-    Live telemetry endpoint:
-    When simulator_running is True, returns current synchronized robot state.
+    Generates exactly one simulated telemetry sample, runs it through the Rule Engine,
+    and saves it to both Hot/Cold path tables and the active session's telemetry_points.
     """
-    response_data = robot_state.copy()
-    response_data["is_simulating"] = simulator_running
-    return jsonify(response_data), 200
+    global robot_state, sim_battery_ocv, combat_ticks, last_sim_step_time
 
-
-def simulator_worker():
-    """Background thread that automatically generates and stores telemetry points for the active session."""
-    global simulator_running, current_sim_session_id, current_sim_start_time, robot_state, sim_battery_ocv
-    combat_ticks = 0
-    s1, s2 = 45, 50
-    pwma, pwmb = 110, 110
-
-    while simulator_running and current_sim_session_id is not None:
-        time.sleep(0.5)
+    with sim_lock:
         if not simulator_running or current_sim_session_id is None:
-            break
+            return
 
-        rel_ms = int((time.time() - current_sim_start_time) * 1000)
+        last_sim_step_time = time.time()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rel_ms = int((last_sim_step_time - current_sim_start_time) * 1000)
 
         # Simulation state machine (Combat vs Roam vs Idle)
         if combat_ticks > 0:
             combat_ticks -= 1
-            s1 = random.randint(3, 14)
-            s2 = random.randint(3, 14)
+            s1 = random.randint(2, 12)
+            s2 = random.randint(2, 12)
             pwma = random.randint(210, 255)
             pwmb = random.randint(210, 255)
             state_label = "COMBAT_PUSH"
         else:
-            if random.random() < 0.20:
-                combat_ticks = random.randint(5, 12)  # 2.5 - 6s combat encounter
-            is_idle = random.random() < 0.25
+            if random.random() < 0.30:
+                combat_ticks = random.randint(2, 5)
+            is_idle = random.random() < 0.20
             if is_idle:
-                pwma = 0
-                pwmb = 0
+                pwma, pwmb = 0, 0
                 s1 = random.randint(35, 65)
                 s2 = random.randint(35, 65)
                 state_label = "IDLE_SCAN"
             else:
-                pwma = random.randint(90, 130)
-                pwmb = random.randint(90, 130)
-                s1 = random.randint(25, 60)
-                s2 = random.randint(25, 60)
+                pwma = random.randint(90, 140)
+                pwmb = random.randint(90, 140)
+                s1 = random.randint(15, 60)
+                s2 = random.randint(15, 60)
                 state_label = "ROAMING"
 
-        is_combat = (combat_ticks > 0) or (s1 <= 25 or s2 <= 25) or (pwma + pwmb) > 380
-        is_heavy = (s1 <= 10 or s2 <= 10) and (pwma + pwmb) > 420
-
-        # Load-based dynamic battery discharge
-        if is_heavy:
-            drain = random.uniform(0.0018, 0.0028)
-        elif is_combat:
-            drain = random.uniform(0.0009, 0.0016)
-        elif pwma == 0 and pwmb == 0:
-            drain = 0.00004
+        # Battery discharge + realistic load drop (occasionally dipping <= 6.4V in heavy combat)
+        drain = 0.04 if state_label == "COMBAT_PUSH" else 0.01
+        sim_battery_ocv = max(6.5, sim_battery_ocv - drain)
+        if state_label == "COMBAT_PUSH" and random.random() < 0.35:
+            # Heavy current draw causes temporary voltage sag below critical threshold
+            bat = round(random.uniform(6.1, 6.4), 2)
         else:
-            drain = random.uniform(0.0001, 0.00025)
-
-        sim_battery_ocv = max(6.4, sim_battery_ocv - drain)
-        motor_load = min(1.0, (pwma + pwmb) / 510.0)
-        ir_drop = motor_load * 0.035 if is_combat else motor_load * 0.012
-        bat = round(max(6.0, sim_battery_ocv - ir_drop), 2)
+            bat = round(sim_battery_ocv - random.uniform(0.02, 0.15), 2)
 
         fake_data = {
             "bat": bat,
@@ -284,38 +251,74 @@ def simulator_worker():
             "pwmB": pwmb,
             "state": state_label,
         }
-        robot_state.update(fake_data)
-        check_rules_and_log(fake_data)
 
-        try:
-            with sqlite3.connect(DB_PATH) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    INSERT INTO telemetry_points (session_id, rel_time_ms, vbat, dist_l, dist_r, line_l, line_r, pwm_l, pwm_r)
-                    VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)
-                    """,
-                    (current_sim_session_id, rel_ms, bat, s1, s2, pwma, pwmb),
-                )
-                cursor.execute(
-                    """
-                    UPDATE sessions SET duration_ms = ?, end_vbat = ? WHERE id = ?
-                    """,
-                    (rel_ms, bat, current_sim_session_id),
-                )
-                conn.commit()
-        except Exception as e:
-            print(f"[Simulator Worker Error] {e}")
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            # 1. Route to Hot or Cold Path via Data-Driven Rule Engine
+            path, rule_broken, message = evaluate_and_route(cursor, fake_data, now_str)
+
+            # 2. Record point in telemetry_points for the active session
+            cursor.execute(
+                """
+                INSERT INTO telemetry_points (session_id, rel_time_ms, vbat, dist_l, dist_r, line_l, line_r, pwm_l, pwm_r)
+                VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)
+                """,
+                (current_sim_session_id, rel_ms, bat, s1, s2, pwma, pwmb),
+            )
+            cursor.execute(
+                """
+                UPDATE sessions SET duration_ms = ?, end_vbat = ? WHERE id = ?
+                """,
+                (rel_ms, bat, current_sim_session_id),
+            )
+            conn.commit()
+
+        robot_state.update(fake_data)
+        robot_state["path"] = path
+        robot_state["last_alert"] = rule_broken
+        robot_state["last_message"] = message
+
+
+def simulator_fallback_worker():
+    """
+    Fallback background thread: Only generates steps if no Web UI client is actively
+    polling GET /api/telemetry (e.g., when controlled solely from the Android App).
+    """
+    while simulator_running and current_sim_session_id is not None:
+        time.sleep(1.0)
+        if not simulator_running or current_sim_session_id is None:
+            break
+        # If no web client polled /api/telemetry in the last 1.3 seconds, step automatically
+        if time.time() - last_sim_step_time >= 1.3:
+            generate_simulation_step()
+
+
+@app.route("/api/telemetry", methods=["GET"])
+def get_telemetry():
+    """
+    Live telemetry endpoint:
+    When simulator_running is True, generates 1 synchronized step per poll so
+    the Web UI and SQLite database maintain a strict 1:1 relationship.
+    """
+    if simulator_running:
+        generate_simulation_step()
+
+    response_data = robot_state.copy()
+    response_data["is_simulating"] = simulator_running
+    return jsonify(response_data), 200
 
 
 @app.route("/api/simulator/start", methods=["POST"])
 def start_simulator():
-    """Starts simulated telemetry generation, creates a new session in SQLite, and streams points."""
-    global simulator_running, current_sim_session_id, current_sim_start_time, sim_battery_ocv
+    """Starts simulated telemetry generation and creates a new session in SQLite."""
+    global simulator_running, current_sim_session_id, current_sim_start_time, sim_battery_ocv, last_sim_step_time, combat_ticks
     if not simulator_running:
         simulator_running = True
         sim_battery_ocv = 8.35
+        combat_ticks = 0
         current_sim_start_time = time.time()
+        last_sim_step_time = time.time()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         with sqlite3.connect(DB_PATH) as conn:
@@ -330,7 +333,7 @@ def start_simulator():
             current_sim_session_id = cursor.lastrowid
             conn.commit()
 
-        threading.Thread(target=simulator_worker, daemon=True).start()
+        threading.Thread(target=simulator_fallback_worker, daemon=True).start()
         return (
             jsonify(
                 {
@@ -379,8 +382,9 @@ def stop_simulator():
 @app.route("/api/database/clear", methods=["DELETE"])
 def clear_database():
     """Clear all generated telemetry logs, safety events, and sessions, resetting auto-increment IDs."""
-    global simulator_running
+    global simulator_running, current_sim_session_id
     simulator_running = False
+    current_sim_session_id = None
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM telemetry_logs")
@@ -457,7 +461,6 @@ def get_history():
         cursor = conn.cursor()
 
         if req_type in ("hot", "all"):
-            # Query critical safety events (Hot Path)
             rows = cursor.execute(
                 "SELECT timestamp, rule_name, message, raw_measurement FROM safety_events ORDER BY id DESC LIMIT 100"
             ).fetchall()
@@ -474,7 +477,6 @@ def get_history():
                     results.append(item)
 
         if req_type in ("cold", "all"):
-            # Query normal telemetry logs (Cold Path)
             rows = cursor.execute(
                 "SELECT timestamp, raw_measurement, status FROM telemetry_logs ORDER BY id DESC LIMIT 100"
             ).fetchall()
@@ -500,8 +502,8 @@ def get_history():
 def upload_session():
     """
     Receives session telemetry upload from Android app or web client.
-    Persists session summary in 'sessions' and points in 'telemetry_points'.
-    Evaluates points through the Rule Engine into Cold/Hot Path tables.
+    Persists session summary in 'sessions', raw points in 'telemetry_points',
+    and routes each point through the Data-Driven Rule Engine (evaluate_and_route).
     """
     data = request.get_json(silent=True) or {}
     session_type = data.get("session_type", "FREE_ROAM")
@@ -526,14 +528,25 @@ def upload_session():
         point_records = []
         for p in points:
             rel_time = int(p.get("rel_time_ms", 0))
-            vbat = float(p.get("vbat", 0.0))
-            dist_l = int(p.get("dist_l", 0))
-            dist_r = int(p.get("dist_r", 0))
+            vbat = float(p.get("vbat", 8.4))
+            dist_l = int(p.get("dist_l", 50))
+            dist_r = int(p.get("dist_r", 50))
             line_l = int(p.get("line_l", 0))
             line_r = int(p.get("line_r", 0))
             pwm_l = int(p.get("pwm_l", 0))
             pwm_r = int(p.get("pwm_r", 0))
             point_records.append((session_id, rel_time, vbat, dist_l, dist_r, line_l, line_r, pwm_l, pwm_r))
+
+            # Route each mobile measurement through the unified Data-Driven Rule Engine
+            meas = {
+                "bat": vbat,
+                "s1": dist_l,
+                "s2": dist_r,
+                "pwmA": pwm_l,
+                "pwmB": pwm_r,
+                "state": session_type,
+            }
+            evaluate_and_route(cursor, meas, created_at, prefix=f"Session #{session_id}: ")
 
         if point_records:
             cursor.executemany(
@@ -543,35 +556,6 @@ def upload_session():
                 """,
                 point_records,
             )
-
-        # Mirror points into cold/hot path tables via Rule Engine criteria
-        for p in points:
-            meas = {
-                "bat": float(p.get("vbat", 8.4)),
-                "s1": int(p.get("dist_l", 50)),
-                "s2": int(p.get("dist_r", 50)),
-                "pwmA": int(p.get("pwm_l", 0)),
-                "pwmB": int(p.get("pwm_r", 0)),
-                "state": session_type,
-            }
-            if meas["bat"] <= 6.4:
-                cursor.execute(
-                    """INSERT INTO safety_events (timestamp, severity, rule_name, message, raw_measurement)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (created_at, "CRITICAL", "BATTERY_CRITICAL", f"Session #{session_id}: Kritikus akku ({meas['bat']}V)", json.dumps(meas)),
-                )
-            elif meas["s1"] <= 5 or meas["s2"] <= 5:
-                cursor.execute(
-                    """INSERT INTO safety_events (timestamp, severity, rule_name, message, raw_measurement)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (created_at, "CRITICAL", "OBSTACLE_COLLISION", f"Session #{session_id}: Ütközésveszély! ({min(meas['s1'], meas['s2'])}cm)", json.dumps(meas)),
-                )
-            else:
-                cursor.execute(
-                    """INSERT INTO telemetry_logs (timestamp, raw_measurement, status)
-                       VALUES (?, ?, ?)""",
-                    (created_at, json.dumps(meas), "OK"),
-                )
 
         conn.commit()
 
