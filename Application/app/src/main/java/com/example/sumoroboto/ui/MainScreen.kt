@@ -25,8 +25,8 @@ import com.example.sumoroboto.ui.components.DeviceSelectionSheet
 import com.example.sumoroboto.ui.components.RobotNameDialog
 import com.example.sumoroboto.ui.components.TopSumoAppBar
 import com.example.sumoroboto.ui.navigation.ScreenDestination
-import com.example.sumoroboto.ui.screens.ControlScreen
 import com.example.sumoroboto.ui.screens.DohyoScreen
+import com.example.sumoroboto.ui.screens.HistoryScreen
 import com.example.sumoroboto.ui.screens.SettingsScreen
 import com.example.sumoroboto.ui.screens.TelemetryScreen
 
@@ -50,6 +50,7 @@ fun MainScreen(
     val loggingState by viewModel.loggingSession.collectAsState()
     val sessionRecorderState by viewModel.sessionRecorderState.collectAsState()
     val backendBaseUrl by viewModel.backendBaseUrl.collectAsState()
+    val historyUiState by viewModel.historyUiState.collectAsState()
 
     val robotName by viewModel.robotName.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
@@ -134,6 +135,20 @@ fun MainScreen(
                         onStartCloudSession = { sessionType -> viewModel.startCloudSession(sessionType) },
                         onStopAndUploadCloudSession = { notes -> viewModel.stopAndUploadCloudSession(notes) },
                         onCancelCloudSession = { viewModel.cancelCloudSession() }
+                    )
+                }
+                ScreenDestination.HISTORY -> {
+                    HistoryScreen(
+                        uiState = historyUiState,
+                        onFilterChange = { viewModel.setHistoryFilter(it) },
+                        onSearchQueryChange = { viewModel.setHistorySearchQuery(it) },
+                        onMetricChange = { viewModel.setGraphMetric(it) },
+                        onSelectSession = { viewModel.selectSessionForGraph(it) },
+                        onClearSelectedSession = { viewModel.clearSelectedSession() },
+                        onToggleInAppGenerator = { viewModel.toggleInAppTelemetryGenerator() },
+                        onToggleServerSimulator = { viewModel.toggleServerSimulator() },
+                        onRefresh = { viewModel.fetchHistory() },
+                        onClearDatabase = { viewModel.clearRemoteDatabase() }
                     )
                 }
                 ScreenDestination.DOHYO -> {

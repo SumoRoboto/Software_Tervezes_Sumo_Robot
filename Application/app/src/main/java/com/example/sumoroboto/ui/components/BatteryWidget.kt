@@ -1,19 +1,25 @@
 package com.example.sumoroboto.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
@@ -51,16 +57,35 @@ fun BatteryWidget(
         label = "batteryColor"
     )
 
+    val barProgress by animateFloatAsState(
+        targetValue = (percent / 100f).coerceIn(0.05f, 1f),
+        label = "batteryProgress"
+    )
+
+    val containerBg by animateColorAsState(
+        targetValue = if (isCritical) Color(0xFF3E1A1A) else MaterialTheme.colorScheme.surfaceVariant,
+        label = "containerBg"
+    )
+
+    val containerBorder by animateColorAsState(
+        targetValue = if (isCritical) Color(0xFFE53935).copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant,
+        label = "containerBorder"
+    )
+
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (isCritical) Color(0xFF3E1A1A) else MaterialTheme.colorScheme.surfaceVariant)
-            .border(1.dp, if (isCritical) Color(0xFFE53935).copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+            .background(containerBg)
+            .border(1.dp, containerBorder, RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        if (isCritical) {
+        AnimatedVisibility(
+            visible = isCritical,
+            enter = fadeIn() + expandHorizontally(),
+            exit = fadeOut() + shrinkHorizontally()
+        ) {
             Icon(
                 imageVector = Icons.Default.Warning,
                 contentDescription = "Battery Low Warning",
@@ -83,7 +108,7 @@ fun BatteryWidget(
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .fillMaxWidth((percent / 100f).coerceIn(0.05f, 1f))
+                        .fillMaxWidth(barProgress)
                         .clip(RoundedCornerShape(1.dp))
                         .background(barColor)
                 )
@@ -99,7 +124,8 @@ fun BatteryWidget(
         }
 
         Column(
-            horizontalAlignment = Alignment.End
+            horizontalAlignment = Alignment.End,
+            modifier = Modifier.widthIn(min = 38.dp)
         ) {
             Text(
                 text = "$percent%",
