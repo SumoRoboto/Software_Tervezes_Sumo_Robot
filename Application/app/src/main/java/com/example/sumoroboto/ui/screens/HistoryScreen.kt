@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -47,6 +50,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,68 +83,64 @@ fun HistoryScreen(
     onClearDatabase: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var isSearchVisible by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 1. Search Bar
-        OutlinedTextField(
-            value = uiState.searchQuery,
-            onValueChange = onSearchQueryChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Keresés szabály, állapot vagy időpont alapján...", fontSize = 13.sp) },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            trailingIcon = {
-                if (uiState.searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear")
-                    }
-                }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp)
-        )
-
-        // 2. Filter Category Chips & Refresh
+        // 1. Filter Category Chips (Scrollable without text cut-off) + Search Toggle & Refresh Icons
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.weight(1f)
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 FilterChip(
                     selected = uiState.filterType == HistoryFilterType.ALL,
                     onClick = { onFilterChange(HistoryFilterType.ALL) },
-                    label = { Text("Összes", fontSize = 11.sp) }
+                    label = { Text("Összes", fontSize = 11.sp, maxLines = 1) }
                 )
                 FilterChip(
                     selected = uiState.filterType == HistoryFilterType.COLD,
                     onClick = { onFilterChange(HistoryFilterType.COLD) },
-                    label = { Text("Cold Path", fontSize = 11.sp) }
+                    label = { Text("Cold Path", fontSize = 11.sp, maxLines = 1) }
                 )
                 FilterChip(
                     selected = uiState.filterType == HistoryFilterType.HOT,
                     onClick = { onFilterChange(HistoryFilterType.HOT) },
-                    label = { Text("Hot Path", fontSize = 11.sp) }
+                    label = { Text("Hot Path", fontSize = 11.sp, maxLines = 1) }
                 )
                 FilterChip(
                     selected = uiState.filterType == HistoryFilterType.SESSIONS,
                     onClick = { onFilterChange(HistoryFilterType.SESSIONS) },
-                    label = { Text("Munkamenetek", fontSize = 11.sp) }
+                    label = { Text("Menetek", fontSize = 11.sp, maxLines = 1) }
                 )
             }
 
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // Search toggle icon button
+            IconButton(
+                onClick = { isSearchVisible = !isSearchVisible },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = if (isSearchVisible) Icons.Default.Close else Icons.Default.Search,
+                    contentDescription = "Keresés",
+                    tint = if (isSearchVisible || uiState.searchQuery.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Refresh button
             IconButton(
                 onClick = onRefresh,
                 modifier = Modifier.size(36.dp)
@@ -155,13 +158,39 @@ fun HistoryScreen(
             }
         }
 
+        // 2. Expandable Search Bar (Takes 0 space when hidden)
+        AnimatedVisibility(visible = isSearchVisible || uiState.searchQuery.isNotEmpty()) {
+            OutlinedTextField(
+                value = uiState.searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Keresés szabály, állapot vagy időpont alapján...", fontSize = 13.sp) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingIcon = {
+                    if (uiState.searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchQueryChange("") }) {
+                            Icon(imageVector = Icons.Default.Clear, contentDescription = "Törlés")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+
         // 3. Quick Actions Toolbar (Simulator controls & DB Clear)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // In-app generator button
+            // In-app generator button (Renamed to simple "Generál")
             Button(
                 onClick = onToggleInAppGenerator,
                 modifier = Modifier.weight(1f),
@@ -177,8 +206,8 @@ fun HistoryScreen(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (uiState.isAppGenerating) "Generátor STOP" else "App Generátor",
-                    fontSize = 11.sp,
+                    text = if (uiState.isAppGenerating) "STOP" else "Generál",
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -438,7 +467,7 @@ private fun SessionCard(
 
                 val durationSec = String.format("%.1f s", session.durationMs / 1000f)
                 Text(
-                    text = "$durationSec (${session.pointCount} pont)",
+                    text = "$durationSec • ${session.pointCount} pont",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -524,7 +553,7 @@ private fun HistoryRecordCard(item: HistoryItemDto) {
                         )
                     } else {
                         Text(
-                            text = "COLD PATH (OK)",
+                            text = "COLD PATH",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF00E676)

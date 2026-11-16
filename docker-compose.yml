@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  sumo-telemetry-server:
+    build: .
+    container_name: sumo_telemetry_server
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src/backend:/app/src/backend

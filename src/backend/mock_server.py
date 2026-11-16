@@ -3,6 +3,7 @@ import json
 import os
 import random
 import sqlite3
+import subprocess
 import threading
 import time
 from datetime import datetime
@@ -294,6 +295,12 @@ def simulator_fallback_worker():
             generate_simulation_step()
 
 
+@app.route("/api/health", methods=["GET"])
+@app.route("/", methods=["GET"])
+def health_check():
+    return jsonify({"status": "ok", "service": "sumo_telemetry_server"})
+
+
 @app.route("/api/telemetry", methods=["GET"])
 def get_telemetry():
     """
@@ -377,6 +384,17 @@ def stop_simulator():
         ),
         200,
     )
+
+
+@app.route("/api/server/shutdown", methods=["POST"])
+def shutdown_server():
+    """Remotely stops the Python server process from the client."""
+    def delayed_exit():
+        time.sleep(0.5)
+        os._exit(0)
+
+    threading.Thread(target=delayed_exit, daemon=True).start()
+    return jsonify({"status": "ok", "message": "A szerver sikeresen leállt."}), 200
 
 
 @app.route("/api/database/clear", methods=["DELETE"])
@@ -631,5 +649,36 @@ def get_session_points(session_id):
 # Initialize the database on server startup
 init_db()
 
+
+def setup_adb_reverse():
+    """Configures ADB reverse tcp:8000 for any connected Android emulator or phone."""
+    adb_candidates = [
+        "adb",
+        os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"),
+    ]
+    for adb_bin in adb_candidates:
+        try:
+            res = subprocess.run(
+                [adb_bin, "reverse", "tcp:8000", "tcp:8000"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if res.returncode == 0:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def setup_adb_reverse_loop():
+    """Background watchdog that maintains ADB reverse tcp:8000 active whenever an emulator starts."""
+    while True:
+        setup_adb_reverse()
+        time.sleep(5)
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    setup_adb_reverse()
+    threading.Thread(target=setup_adb_reverse_loop, daemon=True).start()
+    app.run(host="0.0.0.0", port=8000, debug=False)

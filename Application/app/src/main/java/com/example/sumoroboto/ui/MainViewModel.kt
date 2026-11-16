@@ -364,7 +364,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val endVbat = _telemetry.value.vBat
                 sessionRecorder.stopAndUploadSession(
                     endVbat = endVbat,
-                    notes = "In-App Generált Futam (MATCH)"
+                    notes = "Generált Futam"
                 ) { success, msg ->
                     viewModelScope.launch {
                         delay(250)
@@ -377,7 +377,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } else {
                 _historyUiState.value = _historyUiState.value.copy(
-                    statusMessage = "In-app generátor leállítva."
+                    statusMessage = "Generátor leállítva."
                 )
             }
         } else {
@@ -386,7 +386,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             _historyUiState.value = _historyUiState.value.copy(
                 isAppGenerating = true,
-                statusMessage = "In-app generátor fut (Új Session rögzítése)..."
+                statusMessage = "Adatgenerálás folyamatban, új munkamenet rögzítése..."
             )
             inAppGeneratorJob = viewModelScope.launch(Dispatchers.Default) {
                 val random = java.util.Random()
@@ -530,7 +530,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _historyUiState.value = _historyUiState.value.copy(
                     isLoading = false,
-                    statusMessage = "Szerverkapcsolat nem érhető el: ${e.localizedMessage ?: "Időtúllépés"}",
+                    statusMessage = "A szerver nem érhető el. Indítsd el a gépen a start_server.sh futtatásával!",
                     isError = true
                 )
             }
@@ -610,7 +610,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 fetchHistory()
             } catch (e: Exception) {
                 _historyUiState.value = _historyUiState.value.copy(
-                    statusMessage = "Szerver hiba: ${e.localizedMessage}",
+                    statusMessage = "A szerver nem fut a gépen. Indítsd el a gépen a start_server.sh futtatásával!",
                     isError = true
                 )
             }

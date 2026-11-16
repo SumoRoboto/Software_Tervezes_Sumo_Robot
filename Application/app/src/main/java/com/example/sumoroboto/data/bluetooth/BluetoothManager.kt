@@ -40,7 +40,7 @@ class BluetoothManager(
         // Standard SPP UUID for HC-05 / HC-06
         private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
         const val VIRTUAL_DEVICE_ADDRESS = "00:00:00:00:SUMO"
-        const val VIRTUAL_DEVICE_NAME = "Virtual Sumo Robot (Demo)"
+        const val VIRTUAL_DEVICE_NAME = "Virtuális Sumo Robot"
     }
 
     private val bluetoothAdapter: BluetoothAdapter? =
@@ -170,7 +170,7 @@ class BluetoothManager(
             bluetoothAdapter?.bondedDevices?.forEach { device ->
                 list.add(
                     BluetoothDeviceModel(
-                        name = device.name ?: "Sumo Robot (${device.address.takeLast(5)})",
+                        name = device.name ?: "Sumo Robot ${device.address.takeLast(5)}",
                         address = device.address,
                         isBonded = true,
                         isVirtual = false
