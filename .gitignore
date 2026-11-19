@@ -16,3 +16,4 @@ __pycache__/
 # Teszt gyorsítótár és macOS rendszerfájlok
 .pytest_cache/
 .DS_Store
+**/.DS_Store

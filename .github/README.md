@@ -17,15 +17,16 @@ The objective of this project is to build a complete software and hardware ecosy
 
 ```text
 .
-├── Application/        # Android Mobile Application source code (Kotlin, Jetpack Compose, Retrofit)
-├── Assets/             # Pre-built, ready-to-install APK binaries (SumoRobot.apk)
-├── TelemetryPlatform/  # Web interface and Python REST API server with SQLite database
-│   ├── backend/        # mock_server.py and telemetry.db database
-│   └── web/            # index.html – Live web telemetry dashboard (Tailwind CSS + Chart.js)
-├── Backend/            # Python virtual environment (venv) and requirements.txt dependencies
-├── Gravitas/           # Microcontroller firmware (PlatformIO / Arduino Nano C++)
-├── KANBAN.md           # Engineering task roadmap and feature breakdown (Kanban board cards)
-└── Docs/               # Circuit schematics, specifications, and project documentation
+├── Application/              # Android Mobile Application source code (Kotlin, Jetpack Compose, Retrofit)
+├── Assets/                   # Pre-built, ready-to-install APK binaries (SumoRobot.apk)
+├── Backend/                  # Python virtual environment (venv) and requirements.txt dependencies
+├── Docs/                     # Documentation (README.md, KANBAN.md), schematics, and specifications
+├── Gravitas/                 # Microcontroller firmware (PlatformIO / Arduino Nano C++)
+├── scripts/                  # Automation and server startup scripts (start_server.sh)
+├── Start_Sumo_Server.command # 1-click desktop server launcher
+└── TelemetryPlatform/        # Web interface and Python REST API server with SQLite database
+    ├── backend/              # mock_server.py and telemetry.db database
+    └── web/                  # index.html – Live web telemetry dashboard (Tailwind CSS + Chart.js)
 ```
 
 ---
@@ -81,7 +82,7 @@ The telemetry platform handles data logging, persistence, safety rule evaluation
 * **Double-click (macOS)**: Run [Start_Sumo_Server.command](Start_Sumo_Server.command) in the project root.
 * **Terminal (macOS / Linux)**:
   ```bash
-  ./start_server.sh
+  ./scripts/start_server.sh
   ```
   *(The script automatically activates the Python virtual environment, configures `adb reverse tcp:8000 tcp:8000` for emulators, and prints local network IP addresses).*
 
@@ -108,7 +109,7 @@ The telemetry platform handles data logging, persistence, safety rule evaluation
 4. Test real-time control, live telemetry, and session generation on the **"Telemetry"** and **"Data"** tabs.
 
 ### 2. Testing Database Synchronization
-1. Start the server on your computer using `./start_server.sh`.
+1. Start the server on your computer using `./scripts/start_server.sh` or double-click `Start_Sumo_Server.command`.
 2. In the Android app, go to the **"Data"** tab and tap **"Generate"**. Let it run for a few seconds, then tap **"STOP"**.
 3. The new session will immediately sync to the server's SQLite database and appear in the interactive chart.
 4. Open [TelemetryPlatform/web/index.html](TelemetryPlatform/web/index.html) in your web browser to view the live web dashboard.

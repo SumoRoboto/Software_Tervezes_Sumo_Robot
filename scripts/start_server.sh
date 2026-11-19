@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 set -e
 
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cd "$DIR"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+ROOT_DIR="$( cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd )"
+cd "$ROOT_DIR"
 
 echo "======================================================="
 echo "   SUMO ROBOT TELEMETRY SERVER STARTUP                 "
 echo "======================================================="
 
 # 1. Virtual environment activation
-if [ -f "$DIR/Backend/venv/bin/activate" ]; then
-    source "$DIR/Backend/venv/bin/activate"
+if [ -f "$ROOT_DIR/Backend/venv/bin/activate" ]; then
+    source "$ROOT_DIR/Backend/venv/bin/activate"
     PYTHON_CMD="python"
 elif command -v python3 &> /dev/null; then
     PYTHON_CMD="python3"
@@ -41,9 +42,9 @@ echo "-------------------------------------------------------"
 echo "SERVER ENDPOINTS:"
 echo "   * Android Emulator / Local:    http://127.0.0.1:8000"
 echo "   * Physical Phone (Wi-Fi):      http://${LOCAL_IP}:8000"
-echo "   * SQLite Database:             $DIR/TelemetryPlatform/backend/telemetry.db"
+echo "   * SQLite Database:             $ROOT_DIR/TelemetryPlatform/backend/telemetry.db"
 echo "-------------------------------------------------------"
 echo "To terminate the server, press [Ctrl + C]."
 echo "======================================================="
 
-exec "$PYTHON_CMD" "$DIR/TelemetryPlatform/backend/mock_server.py"
+exec "$PYTHON_CMD" "$ROOT_DIR/TelemetryPlatform/backend/mock_server.py"
