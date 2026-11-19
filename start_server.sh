@@ -5,21 +5,21 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
 echo "======================================================="
-echo "   🤖 SUMO ROBOT TELEMETRIA SZERVER INDÍTÁSA...         "
+echo "   SUMO ROBOT TELEMETRY SERVER STARTUP                 "
 echo "======================================================="
 
-# 1. Virtuális környezet aktiválása
+# 1. Virtual environment activation
 if [ -f "$DIR/Backend/venv/bin/activate" ]; then
     source "$DIR/Backend/venv/bin/activate"
     PYTHON_CMD="python"
 elif command -v python3 &> /dev/null; then
     PYTHON_CMD="python3"
 else
-    echo "❌ Hiba: Python virtuális környezet nem található!"
+    echo "[ERROR] Python virtual environment not found!"
     exit 1
 fi
 
-# 2. ADB keresése és reverse port forwarding
+# 2. ADB detection and reverse port forwarding
 ADB_BIN="adb"
 if ! command -v adb &> /dev/null; then
     if [ -f "$HOME/Library/Android/sdk/platform-tools/adb" ]; then
@@ -28,22 +28,22 @@ if ! command -v adb &> /dev/null; then
 fi
 
 if "$ADB_BIN" devices 2>/dev/null | grep -q "device$"; then
-    echo "📱 Android eszköz / emulátor észlelve!"
-    "$ADB_BIN" reverse tcp:8000 tcp:8000 2>/dev/null && echo "   ✅ ADB reverse tcp:8000 sikeresen aktiválva!" || true
+    echo "[INFO] Android device / emulator detected."
+    "$ADB_BIN" reverse tcp:8000 tcp:8000 2>/dev/null && echo "   [OK] ADB reverse tcp:8000 successfully active." || true
 else
-    echo "ℹ️  Még nem fut Android emulátor (a szerver a háttérben automatikusan csatlakozik, amint elindul)."
+    echo "[INFO] No active emulator detected (watchdog will forward once started)."
 fi
 
-# 3. Helyi Wi-Fi IP cím lekérése fizikai telefonhoz
+# 3. Local Wi-Fi IP address resolution
 LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "127.0.0.1")
 
 echo "-------------------------------------------------------"
-echo "🌐 SZERVER ELÉRHETŐSÉG:"
-echo "   • Android Emulátor / Helyi gép: http://127.0.0.1:8000"
-echo "   • Valós telefon (Wi-Fi):        http://${LOCAL_IP}:8000"
-echo "   • SQLite Adatbázis:             $DIR/src/backend/telemetry.db"
+echo "SERVER ENDPOINTS:"
+echo "   * Android Emulator / Local:    http://127.0.0.1:8000"
+echo "   * Physical Phone (Wi-Fi):      http://${LOCAL_IP}:8000"
+echo "   * SQLite Database:             $DIR/TelemetryPlatform/backend/telemetry.db"
 echo "-------------------------------------------------------"
-echo "Leállításhoz nyomj [Ctrl + C] billentyűt a terminálban."
+echo "To terminate the server, press [Ctrl + C]."
 echo "======================================================="
 
-exec "$PYTHON_CMD" "$DIR/src/backend/mock_server.py"
+exec "$PYTHON_CMD" "$DIR/TelemetryPlatform/backend/mock_server.py"

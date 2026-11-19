@@ -21,12 +21,12 @@
     </style>
 </head>
 <body>
-    <h2>🤖 Sumo Robot - Fejlesztői Pult (Hot/Cold Path)</h2>
+    <h2> Sumo Robot - Fejlesztői Pult (Hot/Cold Path)</h2>
     
     <div class="toolbar">
         <button id="btn-start" class="btn" onclick="callApi('/api/simulator/start', 'POST')">▶ Szimulátor START</button>
         <button id="btn-stop" class="btn" onclick="callApi('/api/simulator/stop', 'POST')">⏹ Szimulátor STOP</button>
-        <button id="btn-clear" class="btn" onclick="callApi('/api/database/clear', 'DELETE')">🗑 Adatbázis TÖRLÉSE</button>
+        <button id="btn-clear" class="btn" onclick="callApi('/api/database/clear', 'DELETE')"> Adatbázis TÖRLÉSE</button>
     </div>
 
     <div class="container">
@@ -45,7 +45,7 @@
                         <option value="cold">Normál Napló (Cold Path)</option>
                         <option value="hot">Kritikus Riasztások (Hot Path)</option>
                     </select>
-                    <button class="small" onclick="searchHistory()">Keresés 🔍</button>
+                    <button class="small" onclick="searchHistory()">Keresés </button>
                 </div>
             </div>
             <div id="history-console" class="console-box">Válassz típust és nyomj a Keresésre!<br></div>
@@ -97,10 +97,10 @@
 
                 data.items.forEach(item => {
                     if (type === "hot") {
-                        historyBox.innerHTML += `<span style="color: #f44336">[${item.timestamp}] 🚨 ${item.rule_broken}: ${item.message}</span><br>`;
+                        historyBox.innerHTML += `<span style="color: #f44336">[${item.timestamp}] [HOT PATH] ${item.rule_broken}: ${item.message}</span><br>`;
                         historyBox.innerHTML += `<span style="color: #aaa">   Nyers adat: Akku ${item.data.bat}V, S1 ${item.data.s1}cm</span><br>`;
                     } else {
-                        historyBox.innerHTML += `<span style="color: #00ffff">[${item.timestamp}] 📝 Akku: ${item.data.bat}V | S1: ${item.data.s1}cm | PWM: ${item.data.pwmA}</span><br>`;
+                        historyBox.innerHTML += `<span style="color: #00ffff">[${item.timestamp}] [COLD PATH] Akku: ${item.data.bat}V | S1: ${item.data.s1}cm | PWM: ${item.data.pwmA}</span><br>`;
                     }
                 });
             } catch (error) {
@@ -117,12 +117,12 @@
                     if (data.is_simulating) {
                         if (data.path === "HOT" && data.last_alert) {
                             logToLive(
-                                `🚨 HOT PATH (safety_events) [${data.last_alert}] -> Akku: ${data.bat}V | S1: ${data.s1}cm | S2: ${data.s2}cm`,
+                                `[HOT PATH] HOT PATH (safety_events) [${data.last_alert}] -> Akku: ${data.bat}V | S1: ${data.s1}cm | S2: ${data.s2}cm`,
                                 "#f44336"
                             );
                         } else {
                             logToLive(
-                                `📝 COLD PATH (telemetry_logs) -> Akku: ${data.bat}V | S1: ${data.s1}cm | S2: ${data.s2}cm`,
+                                `[COLD PATH] COLD PATH (telemetry_logs) -> Akku: ${data.bat}V | S1: ${data.s1}cm | S2: ${data.s2}cm`,
                                 "#00ffff"
                             );
                         }

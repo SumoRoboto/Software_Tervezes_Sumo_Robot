@@ -144,7 +144,7 @@ private class MiniGameEngine {
                 ai.out = hypot(ai.x, ai.y) > OUTER_R
                 when {
                     player.out && ai.out -> endRound("Döntetlen kör", 0)
-                    ai.out -> endRound("Pont neked! 💪", 1)
+                    ai.out -> endRound("Pont neked!", 1)
                     player.out -> endRound("Pont az AI-nak", -1)
                     roundTime >= ROUND_MAX -> {
                         val dp = hypot(player.x, player.y)
@@ -162,7 +162,7 @@ private class MiniGameEngine {
                 phaseTimer -= dt
                 if (phaseTimer <= 0f) {
                     if (scoreP >= WIN_SCORE || scoreA >= WIN_SCORE) {
-                        message = if (scoreP > scoreA) "Győztél! 🏆" else "Vesztettél"
+                        message = if (scoreP > scoreA) "Győztél!" else "Vesztettél"
                         phase = GamePhase.MATCH_END
                     } else {
                         round++

@@ -6,14 +6,14 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 PLIST_LABEL="com.sumorobot.telemetry"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 PYTHON_BIN="$DIR/Backend/venv/bin/python"
-SERVER_SCRIPT="$DIR/src/backend/mock_server.py"
+SERVER_SCRIPT="$DIR/TelemetryPlatform/backend/mock_server.py"
 
 case "$1" in
     install|start)
-        echo "🔧 Háttérszolgáltatás telepítése és indítása..."
+        echo "[INFO] Installing and launching background service..."
         mkdir -p "$HOME/Library/LaunchAgents"
 
-        # Ha már be van töltve, először unload
+        # If already loaded, unload first
         launchctl list 2>/dev/null | grep -q "$PLIST_LABEL" && launchctl unload "$PLIST_PATH" 2>/dev/null || true
 
         cat <<EOF > "$PLIST_PATH"
@@ -46,41 +46,40 @@ EOF
         sleep 1
 
         if curl -s http://127.0.0.1:8000/api/health 2>/dev/null | grep -q "ok"; then
-            echo "✅ A szerver sikeresen elindult a háttérben (Port: 8000)!"
-            echo "   • Mindig futni fog a háttérben, a Mac indításakor is automatikusan elindul."
-            echo "   • Nem kell többet manuálisan terminált nyitnod!"
-            echo "   • Naplófájl: /tmp/sumo_telemetry.log"
+            echo "[OK] Server successfully started in background (Port: 8000)."
+            echo "   * Starts automatically on login."
+            echo "   * Log file: /tmp/sumo_telemetry.log"
         else
-            echo "⚠️ A szolgáltatás betöltve, de a port ellenőrzése még nem válaszolt. Ellenőrizd a naplót: /tmp/sumo_telemetry.err"
+            echo "[WARN] Service loaded, but port is not responding yet. Check log: /tmp/sumo_telemetry.err"
         fi
         ;;
 
     uninstall|stop)
-        echo "🛑 Háttérszolgáltatás leállítása és törlése..."
+        echo "[INFO] Stopping and removing background service..."
         if [ -f "$PLIST_PATH" ]; then
             launchctl unload "$PLIST_PATH" 2>/dev/null || true
             rm -f "$PLIST_PATH"
         fi
-        echo "✅ A háttérszolgáltatás leállítva és eltávolítva."
+        echo "[OK] Background service stopped and removed."
         ;;
 
     status)
-        echo "🔍 Szerver állapot:"
+        echo "[INFO] Server Status:"
         if curl -s http://127.0.0.1:8000/api/health 2>/dev/null | grep -q "ok"; then
-            echo "🟢 A szerver AKTÍV és válaszol a http://127.0.0.1:8000 címen."
+            echo "   [ACTIVE] Server is running on http://127.0.0.1:8000"
         else
-            echo "🔴 A szerver jelenleg NEM fut."
+            echo "   [INACTIVE] Server is currently NOT running."
         fi
 
         if launchctl list 2>/dev/null | grep -q "$PLIST_LABEL"; then
-            echo "📋 macOS LaunchAgent regisztrálva van."
+            echo "   [REGISTERED] macOS LaunchAgent is registered."
         else
-            echo "📋 macOS LaunchAgent nincs regisztrálva."
+            echo "   [UNREGISTERED] macOS LaunchAgent is not registered."
         fi
         ;;
 
     *)
-        echo "Használat: $0 {install|start|status|uninstall|stop}"
+        echo "Usage: $0 {install|start|status|uninstall|stop}"
         exit 1
         ;;
 esac

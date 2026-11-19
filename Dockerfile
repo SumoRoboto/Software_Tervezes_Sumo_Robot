@@ -5,10 +5,10 @@ WORKDIR /app
 COPY Backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src /app/src
+COPY TelemetryPlatform /app/TelemetryPlatform
 
 EXPOSE 8000
 
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "src/backend/mock_server.py"]
+CMD ["python", "TelemetryPlatform/backend/mock_server.py"]
