@@ -66,6 +66,13 @@ interface SumoApiService {
     suspend fun stopSimulator(): Response<Map<String, Any>>
 
     /**
+     * Remotely shuts down the host backend server.
+     * Maps to POST /api/server/shutdown.
+     */
+    @POST("api/server/shutdown")
+    suspend fun shutdownServer(): Response<Map<String, Any>>
+
+    /**
      * Clears all generated logs, alerts, sessions, and points in the database.
      * Maps to DELETE /api/database/clear.
      */

@@ -14,7 +14,6 @@ import com.example.sumoroboto.ui.navigation.AppFlowState
 import com.example.sumoroboto.ui.screens.ConnectionScreen
 import com.example.sumoroboto.ui.screens.SplashScreen
 import com.example.sumoroboto.ui.theme.SumoRobotoTheme
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

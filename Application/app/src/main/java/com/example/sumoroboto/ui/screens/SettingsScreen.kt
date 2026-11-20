@@ -239,7 +239,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Accent Color (Controls, Joystick & Sliders)",
+                        text = "Kiemelő szín",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -267,43 +267,6 @@ fun SettingsScreen(
                             isSelected = isSelected,
                             onSelect = { onAccentColorChange(accent) }
                         )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Live Preview Card
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-                        .padding(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Live Theme Preview",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(MaterialTheme.colorScheme.primary)
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = currentAccentColor.displayName,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            )
-                        }
                     }
                 }
             }
@@ -358,14 +321,14 @@ fun SettingsScreen(
                 ) {
                     Icon(imageVector = Icons.Default.BluetoothConnected, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Switch / Reconnect Robot (Connection Page)")
+                    Text("Robot váltása vagy újracsatlakozás")
                 }
             }
         }
 
-        // Section 4: FastAPI Backend Server Configuration
+        // Section 4: Telemetry Backend Server Configuration
         Text(
-            text = "FastAPI Backend Server",
+            text = "Adatbázis Szerver",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
@@ -394,14 +357,14 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Telemetry API Base URL",
+                        text = "Telemetria Szerver URL",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }
 
                 Text(
-                    text = "Konfiguráld a helyi FastAPI szerver elérhetőségét (POST /api/sessions):",
+                    text = "Konfiguráld a helyi szerver elérhetőségét a munkamenetek mentéséhez:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -428,7 +391,7 @@ fun SettingsScreen(
                     FilterChip(
                         selected = editingUrl.contains("10.0.2.2"),
                         onClick = { editingUrl = "http://10.0.2.2:8000/" },
-                        label = { Text("Emulator (10.0.2.2)", fontSize = 11.sp) }
+                        label = { Text("Emulátor", fontSize = 11.sp) }
                     )
                     FilterChip(
                         selected = editingUrl.contains("127.0.0.1"),
@@ -443,7 +406,7 @@ fun SettingsScreen(
                     shape = RoundedCornerShape(8.dp),
                     enabled = editingUrl.isNotBlank()
                 ) {
-                    Text("Alkalmazás (Mentés)")
+                    Text("Alkalmazás")
                 }
             }
         }
@@ -467,14 +430,14 @@ fun SettingsScreen(
                     Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Mini Sumo System Specs",
+                        text = "Mini Sumo Rendszer",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.labelLarge
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "• Hardware UART @ 115200 bps (Pins D0/D1)\n• Outgoing Rate Limit: 40 Hz (25 ms sample ticker)\n• Safety Watchdog: 200 ms timeout motor cut\n• 2S LiPo Battery: 8.4V max, 6.8V critical cutoff",
+                    text = "• Hardver UART: 115200 bps\n• Kimeneti mintavételezés: 40 Hz\n• Biztonsági Watchdog: 200 ms timeout motorleállítás\n• Akkumulátor: 8.4V max, 6.8V kritikus lekapcsolás",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
