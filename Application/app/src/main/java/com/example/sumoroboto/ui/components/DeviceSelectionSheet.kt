@@ -81,7 +81,7 @@ fun DeviceSelectionSheet(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Select your Sumo Robot (HC-05 / HC-06)",
+                        text = "Válaszd ki a Sumo Robotot",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -129,7 +129,7 @@ fun DeviceSelectionSheet(
                                     fontSize = 15.sp
                                 )
                                 Text(
-                                    text = "Connected (${currentState.address})",
+                                    text = "Csatlakozva • ${currentState.address}",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

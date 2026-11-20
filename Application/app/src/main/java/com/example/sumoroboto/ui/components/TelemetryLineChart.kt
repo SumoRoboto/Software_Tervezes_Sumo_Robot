@@ -49,7 +49,7 @@ import kotlin.math.roundToInt
 
 enum class GraphMetric(val label: String) {
     BATTERY("Akkufeszültség"),
-    DISTANCE("Távolság (cm)"),
+    DISTANCE("Távolság"),
     PWM("Motor PWM")
 }
 
@@ -94,12 +94,12 @@ fun TelemetryLineChart(
                 ) {
                     when (metric) {
                         GraphMetric.BATTERY -> {
-                            LegendItem(color = Color(0xFF00E5FF), label = "VBat (V)")
+                            LegendItem(color = Color(0xFF00E5FF), label = "VBat")
                             LegendItem(color = Color(0xFFEF5350), label = "6.4V Limit", isDashed = true)
                         }
                         GraphMetric.DISTANCE -> {
-                            LegendItem(color = Color(0xFF29B6F6), label = "Bal (s1)")
-                            LegendItem(color = Color(0xFFFFB300), label = "Jobb (s2)")
+                            LegendItem(color = Color(0xFF29B6F6), label = "Bal")
+                            LegendItem(color = Color(0xFFFFB300), label = "Jobb")
                             LegendItem(color = Color(0xFFEF5350), label = "5cm Veszély", isDashed = true)
                         }
                         GraphMetric.PWM -> {
@@ -118,7 +118,7 @@ fun TelemetryLineChart(
                 val pt = points[activeIndex]
                 val timeSec = String.format("%.2f", pt.relTimeMs / 1000f)
                 val detailText = when (metric) {
-                    GraphMetric.BATTERY -> "${pt.vbat} V (Akkumulátor)"
+                    GraphMetric.BATTERY -> "${pt.vbat} V"
                     GraphMetric.DISTANCE -> "Bal: ${pt.distL} cm | Jobb: ${pt.distR} cm"
                     GraphMetric.PWM -> "Bal: ${pt.pwmL} | Jobb: ${pt.pwmR}"
                 }
@@ -129,7 +129,7 @@ fun TelemetryLineChart(
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(text = "T+${timeSec}s (#${activeIndex + 1})", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "T+${timeSec}s • #${activeIndex + 1}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(text = detailText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 }
                 Spacer(modifier = Modifier.height(4.dp))

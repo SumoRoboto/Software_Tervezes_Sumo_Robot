@@ -144,7 +144,7 @@ private class MiniGameEngine {
                 ai.out = hypot(ai.x, ai.y) > OUTER_R
                 when {
                     player.out && ai.out -> endRound("Döntetlen kör", 0)
-                    ai.out -> endRound("Pont neked! 💪", 1)
+                    ai.out -> endRound("Pont neked!", 1)
                     player.out -> endRound("Pont az AI-nak", -1)
                     roundTime >= ROUND_MAX -> {
                         val dp = hypot(player.x, player.y)
@@ -162,7 +162,7 @@ private class MiniGameEngine {
                 phaseTimer -= dt
                 if (phaseTimer <= 0f) {
                     if (scoreP >= WIN_SCORE || scoreA >= WIN_SCORE) {
-                        message = if (scoreP > scoreA) "Győztél! 🏆" else "Vesztettél"
+                        message = if (scoreP > scoreA) "Győztél!" else "Vesztettél"
                         phase = GamePhase.MATCH_END
                     } else {
                         round++
@@ -251,6 +251,9 @@ private fun DrawScope.drawBot(bot: Bot, center: Offset, pxPerCm: Float, body: Co
     val hf = 5f * pxPerCm   // 10x10 cm alváz
     val alpha = if (bot.out) 0.35f else 1f
     val onEdge = hypot(bot.x, bot.y) > BLACK_R - 2f
+    val bladeW = 3.dp.toPx()
+    val rCorner = 4.dp.toPx()
+
     withTransform({
         translate(center.x + bot.x * pxPerCm, center.y + bot.y * pxPerCm)
         rotate(Math.toDegrees(bot.a.toDouble()).toFloat(), Offset.Zero)
@@ -259,25 +262,44 @@ private fun DrawScope.drawBot(bot: Bot, center: Offset, pxPerCm: Float, body: Co
             color = body,
             topLeft = Offset(-hf, -hf),
             size = Size(2f * hf, 2f * hf),
-            cornerRadius = CornerRadius(4.dp.toPx()),
+            cornerRadius = CornerRadius(rCorner),
             alpha = alpha
         )
         drawRect(                                   // első penge
             color = Color(0xFFB0BEC5),
-            topLeft = Offset(hf - 3.dp.toPx(), -hf),
-            size = Size(3.dp.toPx(), 2f * hf),
+            topLeft = Offset(hf - bladeW, -hf),
+            size = Size(bladeW, 2f * hf),
             alpha = alpha
         )
-        val arrowPath = Path().apply {              // irányjelző nyíl
-            moveTo(hf - 6.dp.toPx(), 0f)
-            lineTo(hf - 16.dp.toPx(), -6.dp.toPx())
-            lineTo(hf - 16.dp.toPx(), 6.dp.toPx())
-            close()
-        }
-        drawPath(arrowPath, color = arrow, alpha = alpha)
+        // Irányjelző nyilak közvetlen rajzolása Path allokáció nélkül
+        val tipX = hf - 5.dp.toPx()
+        val tailX = hf - 15.dp.toPx()
+        drawLine(
+            color = arrow,
+            start = Offset(tailX, 0f),
+            end = Offset(tipX, 0f),
+            strokeWidth = 3.dp.toPx(),
+            alpha = alpha
+        )
+        drawLine(
+            color = arrow,
+            start = Offset(tailX + 4.dp.toPx(), -5.dp.toPx()),
+            end = Offset(tipX, 0f),
+            strokeWidth = 3.dp.toPx(),
+            alpha = alpha
+        )
+        drawLine(
+            color = arrow,
+            start = Offset(tailX + 4.dp.toPx(), 5.dp.toPx()),
+            end = Offset(tipX, 0f),
+            strokeWidth = 3.dp.toPx(),
+            alpha = alpha
+        )
+
         val sensorColor = if (onEdge) Color(0xFFFF1744) else Color(0xFF37474F)
-        drawCircle(sensorColor, 4.dp.toPx(), Offset(hf - 4.dp.toPx(), -hf + 4.dp.toPx()), alpha = alpha)
-        drawCircle(sensorColor, 4.dp.toPx(), Offset(hf - 4.dp.toPx(), hf - 4.dp.toPx()), alpha = alpha)
+        val sensorR = 3.5f.dp.toPx()
+        drawCircle(sensorColor, sensorR, Offset(hf - 4.dp.toPx(), -hf + 4.dp.toPx()), alpha = alpha)
+        drawCircle(sensorColor, sensorR, Offset(hf - 4.dp.toPx(), hf - 4.dp.toPx()), alpha = alpha)
     }
 }
 
@@ -290,15 +312,21 @@ private fun DrawScope.drawArena(engine: MiniGameEngine) {
     drawCircle(Color(0xFF181818), BLACK_R * pxPerCm, center)
     drawCircle(Color.White, OUTER_R * pxPerCm, center, style = Stroke(width = 2.dp.toPx()))
 
-    // Shikiri-sen kezdővonalak
-    for (o in listOf(-5f, 5f)) {
-        drawLine(
-            color = Color(0xFF755B49),
-            start = Offset(center.x - 5f * pxPerCm, center.y + o * pxPerCm),
-            end = Offset(center.x + 5f * pxPerCm, center.y + o * pxPerCm),
-            strokeWidth = 1.2f * pxPerCm
-        )
-    }
+    // Shikiri-sen kezdővonalak (allokációmentes)
+    val lineW = 1.2f * pxPerCm
+    val halfLine = 5f * pxPerCm
+    drawLine(
+        color = Color(0xFF755B49),
+        start = Offset(center.x - halfLine, center.y - halfLine),
+        end = Offset(center.x + halfLine, center.y - halfLine),
+        strokeWidth = lineW
+    )
+    drawLine(
+        color = Color(0xFF755B49),
+        start = Offset(center.x - halfLine, center.y + halfLine),
+        end = Offset(center.x + halfLine, center.y + halfLine),
+        strokeWidth = lineW
+    )
 
     drawBot(engine.ai, center, pxPerCm, Color(0xFF4E2A2A), Color(0xFFFF5252))
     drawBot(engine.player, center, pxPerCm, Color(0xFF263238), Color(0xFF4CAF50))
@@ -312,23 +340,46 @@ fun SumoMiniGame(modifier: Modifier = Modifier) {
     var tick by remember { mutableStateOf(0L) }
     var difficulty by remember { mutableStateOf(GameDifficulty.NORMAL) }
 
-    // Játékciklus: képkockánként frissít
+    // HUD állapotok – CSAK akkor frissülnek amikor változik az értékük, NEM 60 FPS-sel!
+    var hudRound by remember { mutableStateOf(engine.round) }
+    var hudScoreP by remember { mutableStateOf(engine.scoreP) }
+    var hudScoreA by remember { mutableStateOf(engine.scoreA) }
+    var hudTimeLeft by remember { mutableStateOf(ROUND_MAX.toInt()) }
+    var hudTitle by remember { mutableStateOf("Sumo Minijáték") }
+    var hudSubtitle by remember { mutableStateOf<String?>("Koppints a pályára az indításhoz") }
+
+    // Nagy teljesítményű 60 FPS játékciklus:
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) {
             androidx.compose.runtime.withFrameNanos { now ->
-                val dt = if (last == 0L) 0f else ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
+                val dt = if (last == 0L) 0f else ((now - last) / 1_000_000_000f).coerceAtMost(0.04f)
                 last = now
                 engine.update(dt)
+
+                // Csak a Canvas kirajzolását triggereli (nagyon gyors)
                 tick = now
+
+                // HUD throttled frissítés:
+                val newTimeLeft = if (engine.phase == GamePhase.PLAY)
+                    ceil(max(0f, ROUND_MAX - engine.roundTime)).toInt() else ROUND_MAX.toInt()
+                if (newTimeLeft != hudTimeLeft) hudTimeLeft = newTimeLeft
+                if (engine.round != hudRound) hudRound = engine.round
+                if (engine.scoreP != hudScoreP) hudScoreP = engine.scoreP
+                if (engine.scoreA != hudScoreA) hudScoreA = engine.scoreA
+
+                val (newTitle, newSub) = when (engine.phase) {
+                    GamePhase.IDLE -> "Sumo Minijáték" to "Koppints a pályára az indításhoz"
+                    GamePhase.COUNTDOWN -> ceil(engine.phaseTimer).toInt().toString() to null
+                    GamePhase.ROUND_END -> engine.message to null
+                    GamePhase.MATCH_END -> engine.message to "Koppints az új meccshez"
+                    GamePhase.PLAY -> "" to null
+                }
+                if (newTitle != hudTitle) hudTitle = newTitle
+                if (newSub != hudSubtitle) hudSubtitle = newSub
             }
         }
     }
-    @Suppress("UNUSED_VARIABLE")
-    val frame = tick   // ettől frissül a felület minden képkockán
-
-    val timeLeft = if (engine.phase == GamePhase.PLAY)
-        ceil(max(0f, ROUND_MAX - engine.roundTime)).toInt() else ROUND_MAX.toInt()
 
     Column(
         modifier = modifier,
@@ -341,13 +392,13 @@ fun SumoMiniGame(modifier: Modifier = Modifier) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Forduló ${engine.round}", style = MaterialTheme.typography.labelLarge)
+            Text("Forduló $hudRound", style = MaterialTheme.typography.labelLarge)
             Text(
-                "Te ${engine.scoreP} : ${engine.scoreA} AI",
+                "Te $hudScoreP : $hudScoreA AI",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
-            Text("$timeLeft s", style = MaterialTheme.typography.labelLarge)
+            Text("$hudTimeLeft s", style = MaterialTheme.typography.labelLarge)
         }
 
         // Pálya + láthatatlan joystick (húzás)
@@ -387,27 +438,23 @@ fun SumoMiniGame(modifier: Modifier = Modifier) {
                     },
                 contentAlignment = Alignment.Center
             ) {
+                // Csak a Canvas olvassa a tick-et, így a Compose NEM rekomponálja a teljes UI fát minden képkockán!
                 Canvas(modifier = Modifier.fillMaxSize()) {
+                    @Suppress("UNUSED_VARIABLE")
+                    val frame = tick
                     drawArena(engine)
                 }
 
-                val (title, subtitle) = when (engine.phase) {
-                    GamePhase.IDLE -> "Sumo Minijáték" to "Koppints a pályára az indításhoz"
-                    GamePhase.COUNTDOWN -> ceil(engine.phaseTimer).toInt().toString() to null
-                    GamePhase.ROUND_END -> engine.message to null
-                    GamePhase.MATCH_END -> engine.message to "Koppints az új meccshez"
-                    GamePhase.PLAY -> "" to null
-                }
-                if (title.isNotEmpty()) {
+                if (hudTitle.isNotEmpty()) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = title,
+                            text = hudTitle,
                             color = Color.White,
                             fontSize = if (engine.phase == GamePhase.COUNTDOWN) 64.sp else 24.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        if (subtitle != null) {
-                            Text(text = subtitle, color = Color.White, fontSize = 13.sp)
+                        if (hudSubtitle != null) {
+                            Text(text = hudSubtitle!!, color = Color.White, fontSize = 13.sp)
                         }
                     }
                 }
